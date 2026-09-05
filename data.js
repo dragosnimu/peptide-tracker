@@ -1,7 +1,7 @@
 /* Datele planului: substantele din comanda MKM (august 2026), dozele standard din fisa
    furnizorului si avertismentele din raportul de analiza. Tot ce e aici poate fi
    suprascris din aplicatie (Calendar -> Editeaza planul). */
-const APP_VERSION = "1.5";
+const APP_VERSION = "1.6";
 const APP_DATE = "2026-09-05";
 const PLAN_START = "2026-09-05";
 const PLAN_WEEKS = 16;
@@ -9,7 +9,7 @@ const PLAN_WEEKS = 16;
 const SUBS = [
   {
     id: "shb", name: "SUPER Human Blend", short: "SHB",
-    from: "2026-09-05", to: "2027-05-12", time: "am", route: "SC", cycleOn: 56, cycleOff: 14,
+    from: "2026-09-05", to: "2027-04-26", time: "am", route: "SC", cycleOn: 56, cycleOff: 14,
     pattern: "dow", dow: [1, 3, 5], extra: ["2026-09-05"], pauses: [],
     unit: "ml", doseMg: 86.5, mgPerMl: 86.5,
     vialMg: 865, vialMl: 10, ready: true, waterMl: 0, stabilityDays: 21, stock: 10,
@@ -24,7 +24,7 @@ const SUBS = [
     ],
     stab: "După prima puncție: 14-21 zile, la întuneric, nu se congelează.",
     flag: "Doze subterapeutice (raport): aceleași substanțe se obțin oral la doze de 10-20x mai mari.",
-    cycle: "L/Mi/V în cicluri de 8 săpt. + 2 săpt. pauză, până la epuizarea stocului: 90 doze, până pe 12 mai 2027"
+    cycle: "L/Mi/V în cicluri de 8 săpt. + 2 săpt. pauză, până la epuizarea stocului: 83 doze (fiolele expiră în pauze), până pe 26 apr 2027"
   },
   {
     id: "ss31", name: "SS-31 (Elamipretide)", short: "SS-31",
@@ -46,7 +46,7 @@ const SUBS = [
   },
   {
     id: "bb10", name: "BB10 (BPC-157 + TB-500)", short: "BB10",
-    from: "2026-09-12", to: "2027-05-25", time: "am", route: "SC", cycleOn: 42, cycleOff: 14,
+    from: "2026-09-12", to: "2027-05-06", time: "am", route: "SC", cycleOn: 42, cycleOff: 14,
     pattern: "daily", unit: "mg", doseMg: 0.5,
     vialMg: 10, waterMl: 2, stabilityDays: 28, stock: 10,
     test: true, testNote: "test ½ doză",
@@ -60,7 +60,7 @@ const SUBS = [
     ],
     stab: "Reconstituit: 21-28 zile la 2-8 °C. O fiolă = 20 de doze.",
     flag: "Antidoping: BPC-157 (S0) și TB-500 (S2) sunt interzise WADA. Planul urmează cicluri de 6 săpt. cu 2 săpt. pauză.",
-    cycle: "zilnic în cicluri de 6 săpt. + 2 săpt. pauză (raport: 4-6 săpt.), până la epuizarea stocului: 200 doze, până pe 25 mai 2027"
+    cycle: "zilnic în cicluri de 6 săpt. + 2 săpt. pauză (raport: 4-6 săpt.), până la epuizarea stocului: 181 doze (fiolele expiră în pauze), până pe 6 mai 2027"
   },
   {
     id: "nad", name: "NAD+", short: "NAD+",
@@ -119,7 +119,7 @@ const SUBS = [
   },
   {
     id: "ghk", name: "GHK-Cu", short: "GHK-Cu",
-    from: "2026-10-10", to: "2027-07-20", time: "pm", route: "SC", cycleOn: 56, cycleOff: 28,
+    from: "2026-10-10", to: "2027-07-08", time: "pm", route: "SC", cycleOn: 56, cycleOff: 28,
     pattern: "daily", unit: "mg", doseMg: 2.5,
     vialMg: 50, waterMl: 5, stabilityDays: 28, stock: 10,
     test: true, testNote: "test ½ doză",
@@ -133,7 +133,7 @@ const SUBS = [
     ],
     stab: "Reconstituit: 21-28 zile la 2-8 °C.",
     flag: "Încărcare cu cupru: 2,5 mg/zi ≈ 0,4 mg cupru injectat, fără filtrul intestinal; pe 200 de doze ≈ 86 mg cupru în total. Analize cupru și zinc seric la sfârșitul fiecărui ciclu de 8 săpt.; nu începe ciclul următor dacă valorile au crescut.",
-    cycle: "zilnic în cicluri de 8 săpt. + 4 săpt. pauză (raport: 8-12 săpt.), până la epuizarea stocului: 200 doze, până pe 20 iul 2027"
+    cycle: "zilnic în cicluri de 8 săpt. + 4 săpt. pauză (raport: 8-12 săpt.), până la epuizarea stocului: 188 doze (fiolele expiră în pauze), până pe 8 iul 2027"
   },
   {
     id: "epi", name: "Epithalon", short: "Epithalon",
@@ -171,7 +171,7 @@ const SUBS = [
   },
   {
     id: "dsip", name: "DSIP", short: "DSIP",
-    from: "2026-10-31", to: "2027-10-27", time: "pm", route: "SC", cycleOn: 28, cycleOff: 14,
+    from: "2026-10-31", to: "2027-08-03", time: "pm", route: "SC", cycleOn: 28, cycleOff: 14,
     pattern: "daily", unit: "mcg", doseMg: 0.2,
     vialMg: 5, waterMl: 2, stabilityDays: 28, stock: 10,
     test: true, testNote: "test ½ doză",
@@ -185,11 +185,11 @@ const SUBS = [
     ],
     stab: "Reconstituit: 21-28 zile. O fiolă = 25 de doze.",
     flag: "Micrograme, nu miligrame. Doza corectă este 8 U, nu seringă plină. Planul urmează cicluri de 4 săpt. cu 2 săpt. pauză; poți sări zilele în care nu e nevoie.",
-    cycle: "zilnic în cicluri de 4 săpt. + 2 săpt. pauză (fișa: 4-8 săpt.), până la epuizarea stocului: 250 doze, până pe 27 oct 2027"
+    cycle: "zilnic în cicluri de 4 săpt. + 2 săpt. pauză (fișa: 4-8 săpt.), până la epuizarea stocului: 193 doze (fiolele expiră în pauze), până pe 3 aug 2027"
   },
   {
     id: "semax", name: "Semax", short: "Semax",
-    from: "2026-11-07", to: "2027-05-27", time: "am", route: "SC", cycleOn: 42, cycleOff: 14,
+    from: "2026-11-07", to: "2027-05-25", time: "am", route: "SC", cycleOn: 42, cycleOff: 14,
     pattern: "daily", unit: "mcg", doseMg: 0.3,
     vialMg: 5, waterMl: 2, stabilityDays: 28, stock: 10,
     test: true, testNote: "test ½ doză",
@@ -202,11 +202,11 @@ const SUBS = [
     ],
     stab: "Reconstituit: 21-28 zile. O fiolă = 16 doze.",
     flag: "Formularea studiată clinic este intranazală. Micrograme: 12 U, nu seringă plină. Planul urmează cicluri de 6 săpt. cu 2 săpt. pauză.",
-    cycle: "zilnic în cicluri de 6 săpt. + 2 săpt. pauză (fișa: 4-6 săpt.), până la epuizarea stocului: 160 doze, până pe 27 mai 2027"
+    cycle: "zilnic în cicluri de 6 săpt. + 2 săpt. pauză (fișa: 4-6 săpt.), până la epuizarea stocului: 158 doze, până pe 25 mai 2027"
   },
   {
     id: "selank", name: "Selank", short: "Selank",
-    from: "2026-11-14", to: "2027-06-03", time: "pm", route: "SC", cycleOn: 42, cycleOff: 14,
+    from: "2026-11-14", to: "2027-06-04", time: "pm", route: "SC", cycleOn: 42, cycleOff: 14,
     pattern: "daily", unit: "mcg", doseMg: 0.3,
     vialMg: 5, waterMl: 2, stabilityDays: 30, stock: 10,
     test: true, testNote: "test ½ doză",
@@ -219,7 +219,7 @@ const SUBS = [
     ],
     stab: "Reconstituit: 21-30 zile. O fiolă = 16 doze.",
     flag: "Formularea studiată clinic este intranazală. Micrograme: 12 U, nu seringă plină. Planul urmează cicluri de 6 săpt. cu 2 săpt. pauză.",
-    cycle: "zilnic în cicluri de 6 săpt. + 2 săpt. pauză (fișa: 4-6 săpt.), până la epuizarea stocului: 160 doze, până pe 3 iun 2027"
+    cycle: "zilnic în cicluri de 6 săpt. + 2 săpt. pauză (fișa: 4-6 săpt.), până la epuizarea stocului: 161 doze, până pe 4 iun 2027"
   }
 ];
 
@@ -242,13 +242,13 @@ const EVENTS = {
   "2026-12-25": "Selank: sfârșitul ciclului 1. Pauză 2 săptămâni, reia pe 9 ian.",
   "2027-02-01": "Ultima zi NAD+ (stoc epuizat).",
   "2027-02-26": "GHK-Cu: sfârșitul ciclului 2. Pauză 4 săptămâni. Analize cupru și zinc.",
-  "2027-05-12": "Ultima zi SHB (stoc epuizat).",
+  "2027-04-26": "Ultima zi SHB (stoc epuizat).",
+  "2027-05-06": "Ultima zi BB10 (stoc epuizat).",
   "2027-05-21": "GHK-Cu: sfârșitul ciclului 3. Pauză 4 săptămâni. Analize cupru și zinc.",
-  "2027-05-25": "Ultima zi BB10 (stoc epuizat).",
-  "2027-05-27": "Ultima zi Semax (stoc epuizat).",
-  "2027-06-03": "Ultima zi Selank (stoc epuizat).",
-  "2027-07-20": "Ultima zi GHK-Cu (stoc epuizat).",
-  "2027-10-27": "Ultima zi DSIP (stoc epuizat). Sfârșitul planului."
+  "2027-05-25": "Ultima zi Semax (stoc epuizat).",
+  "2027-06-04": "Ultima zi Selank (stoc epuizat).",
+  "2027-07-08": "Ultima zi GHK-Cu (stoc epuizat).",
+  "2027-08-03": "Ultima zi DSIP (stoc epuizat). Sfârșitul planului."
 };
 
 const SITES = ["abdomen stânga", "abdomen dreapta", "coapsă stângă", "coapsă dreaptă", "braț stâng", "braț drept"];

@@ -372,7 +372,7 @@ function renderSettings() {
       <div class="row wrap"><button class="btn" data-act="export">Exportă datele (JSON)</button><label class="btn" style="display:inline-flex;align-items:center">Importă JSON<input type="file" id="s-import" accept="application/json" class="hide"></label></div></div>
     <div class="card stack"><h2>Resetare</h2>
       <div class="row wrap"><button class="btn" data-act="plan-reset-all">Resetează planul la cel inițial</button><button class="btn danger" data-act="wipe">Șterge toate datele</button></div></div>
-    <div class="card stack"><h2>Versiune</h2><p>Peptide Tracker <b class="mono">v${APP_VERSION}</b> · ${fmtL(APP_DATE)} ${fromKey(APP_DATE).getFullYear()}</p><p class="tiny" id="s-upd">${navigator.serviceWorker && navigator.serviceWorker.controller ? "Rulează din cache offline; actualizările se descarcă automat la deschidere." : "Prima încărcare."}</p><div class="row wrap"><button class="btn" data-act="update-check">Caută versiune nouă</button><button class="btn" data-act="reload">Reîncarcă aplicația</button></div></div>
+    <div class="card stack"><h2>Versiune</h2><p>Peptide Tracker <b class="mono">v${APP_VERSION}</b> · ${fmtL(APP_DATE)} ${fromKey(APP_DATE).getFullYear()}</p><p class="tiny" id="s-upd">${navigator.serviceWorker && navigator.serviceWorker.controller ? "Rulează din cache offline; actualizările se descarcă automat la deschidere." : "Prima încărcare."}</p><div class="row wrap"><button class="btn primary" data-act="force-update">Versiune nouă: actualizează</button><button class="btn" data-act="update-check">Caută versiune nouă</button></div><p class="tiny">„Actualizează” șterge cache-ul aplicației și o reîncarcă de pe server. Jurnalul, fiolele și planul rămân neatinse.</p></div>
     <div class="card"><p class="tiny">Peptide Tracker · plan din fișa furnizorului MKM și raportul de analiză (19 aug 2026). Nu este recomandare medicală. Dozele sunt cele raportate în literatură și comunitate, nevalidate clinic.</p></div>`;
   main.innerHTML = `<div class="view">${h}</div>`;
   $("#s-import").addEventListener("change", importJSON);
@@ -540,6 +540,14 @@ const A = {
     } catch (e) { toast("Nu am putut verifica (offline?)"); }
   },
   "reload": () => location.reload(),
+  "force-update": async () => {
+    toast("Șterg cache-ul și reîncarc de pe server...");
+    try {
+      if ("serviceWorker" in navigator) { const regs = await navigator.serviceWorker.getRegistrations(); for (const r of regs) await r.unregister(); }
+      if ("caches" in window) { const ks = await caches.keys(); for (const k of ks) await caches.delete(k); }
+    } catch (e) {}
+    setTimeout(() => location.replace(location.pathname + "?v=" + Date.now()), 300);
+  },
   "notif-now": () => { const k = todayKey(); const ds = dosesOn(k).filter(d => !d.logged && !d.skipped); if (!ds.length) return toast("Nimic de administrat azi"); checkDueNow(true); toast("Reminder trimis"); },
   "notif-test": () => notify("Peptide Tracker", "Notificările funcționează. Așa vei fi anunțat la " + S.settings.am + " și " + S.settings.pm + "."),
   "ics": () => download("peptide-plan.ics", buildICS(), "text/calendar"),
