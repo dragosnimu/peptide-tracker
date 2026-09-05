@@ -349,7 +349,7 @@ function renderSettings() {
       <button class="btn" data-act="settings-save">Salvează orele</button></div>
     <div class="card stack"><h2>Notificări</h2>
       <p class="muted">Stare: <b>${perm === "granted" ? "permise" : perm === "denied" ? "blocate din setările telefonului" : perm === "unsupported" ? "browserul nu le suportă" : "neactivate"}</b>. Notificările din aplicație apar când aplicația e deschisă sau când Android o trezește în fundal (Chrome, aplicație instalată). Pentru alarme garantate, importă calendarul .ics în Google Calendar.</p>
-      <div class="row wrap"><button class="btn primary" data-act="notif-enable" ${perm === "granted" ? "disabled" : ""}>Activează notificările</button><button class="btn" data-act="notif-test" ${perm !== "granted" ? "disabled" : ""}>Notificare de test</button></div>
+      <div class="row wrap"><button class="btn primary" data-act="notif-enable" ${perm === "granted" ? "disabled" : ""}>Activează notificările</button><button class="btn" data-act="notif-test" ${perm !== "granted" ? "disabled" : ""}>Notificare de test</button><button class="btn" data-act="notif-now" ${perm !== "granted" ? "disabled" : ""}>Trimite reminderul de azi</button></div>
       <p class="tiny" id="s-sync"></p></div>
     <div class="card stack"><h2>Calendar telefon</h2>
       <p class="muted">Un eveniment cu alarmă pentru fiecare sesiune (dimineața și seara), cu substanțele, doza și unitățile în titlu. Importă fișierul în Google Calendar.</p>
@@ -372,12 +372,13 @@ function notify(title, body) {
   if (navigator.serviceWorker) navigator.serviceWorker.ready.then(r => r.showNotification(title, opts)).catch(() => { try { new Notification(title, opts); } catch (e) {} });
   else { try { new Notification(title, opts); } catch (e) {} }
 }
-function checkDueNow() {
+function checkDueNow(force) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
   const k = todayKey(), hm = nowHM();
   let changed = false;
   for (const slot of ["am", "pm"]) {
-    if (hm < S.settings[slot]) continue;
-    const key = k + "|" + slot; if (S.notified[key]) continue;
+    if (!force && hm < S.settings[slot]) continue;
+    const key = k + "|" + slot; if (S.notified[key] && !force) continue;
     const ds = dosesOn(k).filter(d => d.sub.time === slot && !d.logged && !d.skipped);
     if (!ds.length) continue;
     S.notified[key] = 1; changed = true;
@@ -407,6 +408,7 @@ async function enableNotifications() {
   S.settings.notif = p === "granted"; save();
   if (p === "granted") {
     toast("Notificări activate");
+    S.notified = {}; save(); setTimeout(() => checkDueNow(true), 500);
     try {
       const reg = await navigator.serviceWorker.ready;
       if ("periodicSync" in reg) { const st = await navigator.permissions.query({ name: "periodic-background-sync" }); if (st.state === "granted") await reg.periodicSync.register("check-doses", { minInterval: 15 * 60 * 1000 }); }
@@ -511,6 +513,7 @@ const A = {
   "plan-reset-all": () => { if (confirm("Resetezi toate modificările planului (datele, fiolele și jurnalul rămân)?")) { S.plan = {}; S.days = {}; save(); toast("Plan resetat"); render(); } },
   "settings-save": () => { S.settings.am = $("#s-am").value || "06:45"; S.settings.pm = $("#s-pm").value || "21:00"; S.notified = {}; save(); toast("Ore salvate"); render(); },
   "notif-enable": enableNotifications,
+  "notif-now": () => { const k = todayKey(); const ds = dosesOn(k).filter(d => !d.logged && !d.skipped); if (!ds.length) return toast("Nimic de administrat azi"); checkDueNow(true); toast("Reminder trimis"); },
   "notif-test": () => notify("Peptide Tracker", "Notificările funcționează. Așa vei fi anunțat la " + S.settings.am + " și " + S.settings.pm + "."),
   "ics": () => download("peptide-plan.ics", buildICS(), "text/calendar"),
   "export": () => download(`peptide-backup-${todayKey()}.json`, JSON.stringify(S, null, 1), "application/json"),
