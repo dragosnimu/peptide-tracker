@@ -1,5 +1,5 @@
 /* Service worker: cache offline + notificari programate (periodic background sync). */
-const CACHE = "peptide-tracker-v7";
+const CACHE = "peptide-tracker-v8";
 const ASSETS = ["./", "./index.html", "./app.js", "./data.js", "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png"];
 
 self.addEventListener("install", e => {

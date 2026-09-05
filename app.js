@@ -98,7 +98,7 @@ function doseCard(d, k) {
   const s = d.sub;
   const cls = d.logged ? "done" : d.skipped ? "skipped" : "";
   let actions;
-  if (d.logged) actions = `<div class="row wrap"><span class="chip ok">administrat ${esc(d.logged.time || "")}</span>${d.logged.feel ? `<span class="feel f${d.logged.feel}">${d.logged.feel}</span>` : ""}<span class="grow"></span><button class="btn small" data-act="log-edit" data-eid="${d.logged.id}">Detalii</button></div>`;
+  if (d.logged) actions = `<div class="row wrap"><span class="chip ok">administrat ${esc(d.logged.time || "")} · ${fmtU(d.logged.units)}</span>${d.logged.planned && Math.abs(d.logged.units - d.logged.planned.units) > 0.01 ? `<span class="chip warn">planificat ${fmtU(d.logged.planned.units)}</span>` : ""}${d.logged.feel ? `<span class="feel f${d.logged.feel}">${d.logged.feel}</span>` : ""}<span class="grow"></span><button class="btn small" data-act="log-edit" data-eid="${d.logged.id}">Detalii</button></div>`;
   else if (d.skipped) actions = `<div class="row wrap"><span class="chip">${d.moved ? "mutată pe mâine" : "sărită"}</span><span class="grow"></span><button class="btn small" data-act="unskip" data-id="${s.id}" data-k="${k}">Anulează</button></div>`;
   else actions = `<div class="row wrap"><button class="btn primary small" data-act="log-new" data-id="${s.id}" data-k="${k}">Administrat</button><button class="btn small" data-act="skip" data-id="${s.id}" data-k="${k}">Sari</button><button class="btn small" data-act="move" data-id="${s.id}" data-k="${k}">Mâine</button><span class="grow"></span><button class="btn small" data-act="dose-edit" data-id="${s.id}" data-k="${k}">Doză</button></div>`;
   return `<div class="dose ${cls}">
@@ -276,7 +276,7 @@ function renderLog() {
   let h = `<div class="card flat"><label class="f">Filtrează<select id="log-filter"><option value="">Toate substanțele</option>${SUBS.map(s => `<option value="${s.id}" ${logFilter === s.id ? "selected" : ""}>${esc(s.short)}</option>`).join("")}</select></label></div>`;
   h += `<div class="card">${list.length ? list.map(e => {
     const s = sub(e.sub);
-    return `<div class="entry"><div class="h"><span>${esc(s.short)} · ${esc(e.label)} = ${fmtU(e.units)}</span><span>${fmtL(e.date)} ${esc(e.time || "")}</span></div>
+    return `<div class="entry"><div class="h"><span>${esc(s.short)} · ${esc(e.label)} = ${fmtU(e.units)}${e.planned && Math.abs(e.units - e.planned.units) > 0.01 ? ` <span class="chip warn">planificat ${fmtU(e.planned.units)}</span>` : ""}</span><span>${fmtL(e.date)} ${esc(e.time || "")}</span></div>
       <div class="m row wrap">${e.feel ? `<span class="feel f${e.feel}">${e.feel}</span>` : ""}<span>${esc(e.site || "")}</span>${(e.symptoms || []).map(x => `<span class="chip">${esc(x)}</span>`).join("")}</div>
       ${e.comment ? `<div class="m">${esc(e.comment)}</div>` : ""}
       <div class="row"><button class="btn small" data-act="log-edit" data-eid="${e.id}">Editează</button></div></div>`;
@@ -292,9 +292,14 @@ function suggestSite() {
 function logSheet(id, k, entry) {
   const s = sub(id);
   const d = entry ? null : scheduled(s, k);
-  const e = entry || { id: Date.now(), date: k, time: nowHM(), sub: id, mg: d.mg, units: d.units, label: d.label, site: suggestSite(), feel: 0, symptoms: [], comment: "" };
+  const e = entry || { id: Date.now(), date: k, time: nowHM(), sub: id, mg: d.mg, units: d.units, label: d.label, site: suggestSite(), feel: 0, symptoms: [], comment: "", planned: { mg: d.mg, units: d.units, label: d.label } };
+  const vialOf = entry ? ((S.vials[id] || []).find(x => x.n === entry.vial) || activeVial(id)) : activeVial(id);
+  const cc = conc(s, vialOf);
+  const planned = e.planned || { mg: e.mg, units: e.units, label: e.label };
   const html = `<h2>${entry ? "Administrare" : "Administrat"}: ${esc(s.short)}</h2>
-    <div class="row"><span class="u mono" style="font-size:22px;font-weight:700">${fmtU(e.units)}</span><span class="muted">${esc(e.label)} · ${esc(s.route)} · ${esc(fmtL(e.date))}</span></div>
+    <p class="muted">${esc(s.route)} · ${esc(fmtL(e.date))} · recomandat: <b>${esc(planned.label)} = ${fmtU(planned.units)}</b></p>
+    <label class="f">Unități administrate (seringă U-100)<input type="number" id="l-units" inputmode="decimal" step="0.5" min="0" value="${String(Math.round(e.units * 100) / 100)}"></label>
+    <div class="alert info" id="l-calc"></div>
     ${!entry && d && !d.vial ? `<div class="alert"><b>Nu ai o fiolă activă pentru ${esc(s.short)}</b>Poți salva oricum, dar stocul din fiolă nu va fi scăzut.</div>` : ""}
     <div class="stack">
       <label class="f">Ora<input type="time" id="l-time" value="${esc(e.time)}"></label>
@@ -305,7 +310,15 @@ function logSheet(id, k, entry) {
     </div>
     <div class="row"><button class="btn primary grow" data-act="log-save" data-eid="${e.id}" data-id="${id}" data-k="${e.date}" data-new="${entry ? "" : "1"}">Salvează</button>${entry ? `<button class="btn danger" data-act="log-delete" data-eid="${e.id}">Șterge</button>` : ""}<button class="btn" data-act="close">Anulează</button></div>`;
   openSheet(html, host => {
-    host.__draft = { mg: e.mg, units: e.units, label: e.label, feel: e.feel, symptoms: (e.symptoms || []).slice() };
+    host.__draft = { mg: e.mg, units: e.units, label: e.label, feel: e.feel, symptoms: (e.symptoms || []).slice(), planned };
+    const calc = () => {
+      const u = Math.max(0, parseFloat(host.querySelector("#l-units").value) || 0);
+      const mg = u / 100 * cc;
+      host.__draft.units = u; host.__draft.mg = mg; host.__draft.label = doseLabel(s, mg);
+      const diff = Math.abs(u - planned.units) > 0.01;
+      host.querySelector("#l-calc").innerHTML = `<b>${fmtU(u)} = ${esc(doseLabel(s, mg))}</b>${diff ? `<span style="color:var(--warn)">Diferit de doza recomandată (${fmtU(planned.units)}): ${u > planned.units ? "+" : "−"}${num(Math.abs(u - planned.units))} U</span>` : "Doza recomandată."}${u > 100 ? `<br><span style="color:var(--warn)">Peste o seringă de 1 ml.</span>` : ""}`;
+    };
+    host.querySelector("#l-units").addEventListener("input", calc); calc();
     host.querySelector("#l-feel").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return; host.__draft.feel = +b.dataset.f; host.querySelectorAll("#l-feel button").forEach(x => x.classList.toggle("on", x === b)); });
     host.querySelector("#l-sym").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return; b.classList.toggle("on"); const v = b.dataset.s; const i = host.__draft.symptoms.indexOf(v); if (i >= 0) host.__draft.symptoms.splice(i, 1); else host.__draft.symptoms.push(v); });
   });
@@ -484,12 +497,17 @@ const A = {
     const time = host.querySelector("#l-time").value, site = host.querySelector("#l-site").value, comment = host.querySelector("#l-comment").value.trim();
     if (d.new) {
       const s = sub(d.id), v = activeVial(d.id);
-      S.log.push({ id: +d.eid, date: d.k, time, sub: d.id, mg: dr.mg, units: dr.units, label: dr.label, site, feel: dr.feel, symptoms: dr.symptoms, comment, vial: v ? v.n : null });
+      if (!(dr.units > 0)) return toast("Introdu unitățile administrate");
+      S.log.push({ id: +d.eid, date: d.k, time, sub: d.id, mg: dr.mg, units: dr.units, label: dr.label, site, feel: dr.feel, symptoms: dr.symptoms, comment, vial: v ? v.n : null, planned: dr.planned });
       if (v) v.leftMg = Math.max(0, Math.round((v.leftMg - dr.mg) * 1000) / 1000);
       const dk = S.days[d.k + "|" + d.id]; if (dk && dk.skip) { delete dk.skip; delete dk.moved; }
-      toast(`${s.short} înregistrat`);
+      toast(`${s.short} înregistrat: ${fmtU(dr.units)}`);
     } else {
-      const e = S.log.find(x => x.id === +d.eid); Object.assign(e, { time, site, feel: dr.feel, symptoms: dr.symptoms, comment }); toast("Actualizat");
+      const e = S.log.find(x => x.id === +d.eid);
+      if (!(dr.units > 0)) return toast("Introdu unitățile administrate");
+      const s = sub(e.sub), vs = S.vials[e.sub] || [], v = vs.find(x => x.n === e.vial);
+      if (v) v.leftMg = Math.min(s.vialMg, Math.max(0, Math.round((v.leftMg + e.mg - dr.mg) * 1000) / 1000));
+      Object.assign(e, { time, site, feel: dr.feel, symptoms: dr.symptoms, comment, mg: dr.mg, units: dr.units, label: dr.label }); toast("Actualizat");
     }
     save(); closeSheet(); render();
   },
