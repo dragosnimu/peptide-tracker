@@ -54,6 +54,7 @@ function scheduled(s, k) {
   if (!extra) {
     if (k < s.from || k > s.to) return null;
     if ((s.pauses || []).some(p => k >= p[0] && k <= p[1])) return null;
+    if (s.cycleOn > 0 && s.cycleOff > 0) { const di0 = diffDays(s.from, k); if (di0 >= 0 && (di0 % (s.cycleOn + s.cycleOff)) >= s.cycleOn) return null; }
     if (s.pattern === "dow" && !s.dow.includes(fromKey(k).getDay())) return null;
   }
   let mg = s.doseMg, note = "", kind = "standard";
@@ -134,6 +135,12 @@ function alertsFor(k) {
       else if (dl <= 1) a.push(`<div class="alert info"><b>${esc(s.short)}: fiola #${v.n} expiră ${dl === 0 ? "azi" : "mâine"}</b>Pregătește următoarea.</div>`);
     }
   }
+  for (const s of allSubs()) {
+    if (s.stopped || !(s.cycleOn > 0 && s.cycleOff > 0) || k <= s.from || k > s.to) continue;
+    const di = diffDays(s.from, k), per = s.cycleOn + s.cycleOff, r = di % per;
+    if (r === s.cycleOn) a.push(`<div class="alert info"><b>${esc(s.short)}: începe pauza de washout (${s.cycleOff / 7} săpt.)</b>Reia pe ${esc(fmtL(addDays(k, s.cycleOff)))}. Fiola deschisă va expira probabil între timp.</div>`);
+    else if (r === 0) a.push(`<div class="alert info"><b>${esc(s.short)}: reia după pauză (ciclul ${Math.floor(di / per) + 1})</b>Verifică dacă fiola activă mai e în termen; altfel prepară una nouă.</div>`);
+  }
   const news = allSubs().filter(s => s.from === k && !s.stopped);
   for (const s of news) a.push(`<div class="alert info"><b>Azi intră ${esc(s.short)}</b>${s.test ? "Prima doză este la jumătate, ca test de tolerabilitate. " : ""}${esc(s.cycle)}.</div>`);
   if (EVENTS[k]) a.push(`<div class="alert info"><b>${esc(fmtL(k))}</b>${esc(EVENTS[k])}</div>`);
@@ -175,7 +182,7 @@ function renderCal() {
     ${EVENTS[selDay] ? `<div class="alert info">${esc(EVENTS[selDay])}</div>` : ""}
     ${ds.length ? slotBlock(ds, selDay) : `<p class="muted">Nicio administrare în această zi.</p>`}
   </div>`;
-  h += `<div class="card"><h2>Ansamblu pe ${planWeeks()} săptămâni</h2><p class="tiny" style="margin-bottom:8px">O coloană = o săptămână. Bară plină = zilnic, estompată = 2-3x/săpt., punctată = pauză. Numărul de lângă substanță = doze planificate până la epuizarea stocului.</p>${gantt()}</div>`;
+  h += `<div class="card"><h2>Ansamblu pe ${planWeeks()} săptămâni</h2><p class="tiny" style="margin-bottom:8px">O coloană = o săptămână. Bară plină = zilnic, estompată = 2-3x/săpt., contur punctat = pauză de washout între cicluri. Numărul de lângă substanță = doze planificate până la epuizarea stocului.</p>${gantt()}</div>`;
   h += `<div class="card"><h2>Editează planul</h2><div class="stack">${allSubs().map(s => `<div class="row between"><div class="grow"><b>${esc(s.short)}</b> <span class="tiny">${s.stopped ? "oprit" : fmt(s.from) + " – " + fmt(s.to) + " " + fromKey(s.to).getFullYear() + " · " + doseCount(s) + " doze · " + tl(s.time) + " · " + doseLabel(s, s.doseMg) + " = " + fmtU(unitsFor(s, s.doseMg, activeVial(s.id)))}</span>${S.plan[s.id] ? ' <span class="chip acc">modificat</span>' : ""}</div><button class="btn small" data-act="plan-edit" data-id="${s.id}">Editează</button></div>`).join("")}</div></div>`;
   main.innerHTML = `<div class="view">${h}</div>`;
 }
@@ -189,7 +196,7 @@ function gantt() {
     for (let w = 1; w <= W; w++) {
       const ws = addDays(PLAN_START, (w - 1) * 7), we = addDays(ws, 6);
       let any = false; for (let i = 0; i < 7; i++) if (scheduled(s, addDays(ws, i))) { any = true; break; }
-      const paused = (s.pauses || []).some(p => p[0] <= we && p[1] >= ws) && !s.stopped;
+      const paused = !s.stopped && ws <= s.to && we >= s.from;
       g += `<div class="b">${any ? `<div class="bar ${s.time} ${s.pattern === "dow" ? "part" : ""}"></div>` : paused ? `<div class="bar off"></div>` : ""}</div>`;
     }
   }
@@ -318,6 +325,8 @@ function planSheet(id) {
       <label class="f">Moment<select id="p-time"><option value="am" ${s.time === "am" ? "selected" : ""}>dimineața</option><option value="pm" ${s.time === "pm" ? "selected" : ""}>seara</option></select></label>
       <label class="f">Frecvență<select id="p-pattern"><option value="daily" ${s.pattern === "daily" ? "selected" : ""}>zilnic</option><option value="dow" ${s.pattern === "dow" ? "selected" : ""}>anumite zile</option></select></label>
       <div id="p-dow" class="chips ${s.pattern === "dow" ? "" : "hide"}">${[1, 2, 3, 4, 5, 6, 0].map(i => `<button type="button" class="tog ${(s.dow || []).includes(i) ? "on" : ""}" data-d="${i}">${DAYS[i]}</button>`).join("")}</div>
+      <div class="row"><label class="f grow">Ciclu activ (săpt.)<input type="number" id="p-on" min="0" step="1" value="${Math.round((s.cycleOn || 0) / 7)}"></label><label class="f grow">Pauză (săpt.)<input type="number" id="p-off" min="0" step="1" value="${Math.round((s.cycleOff || 0) / 7)}"></label></div>
+      <p class="tiny">0 la ambele = fără pauze. Ciclurile se numără de la data de început.</p>
       <label class="f">Doză standard (${s.unit})<input type="number" id="p-dose" step="any" min="0" value="${num(dv).replace(",", ".")}"></label>
       <div class="alert info" id="p-calc"></div>
     </div>
@@ -510,7 +519,8 @@ const A = {
     const dow = [...host.querySelectorAll("#p-dow .tog.on")].map(b => +b.dataset.d);
     if (pattern === "dow" && !dow.length) return toast("Alege cel puțin o zi");
     const mg = toMg(s, parseFloat(host.querySelector("#p-dose").value) || 0); if (mg <= 0) return toast("Doză invalidă");
-    const o = { from, to, time: host.querySelector("#p-time").value, pattern, dow, doseMg: mg, stopped: host.querySelector("#p-stopped").checked };
+    const on = 7 * (parseInt(host.querySelector("#p-on").value, 10) || 0), off = 7 * (parseInt(host.querySelector("#p-off").value, 10) || 0);
+    const o = { from, to, time: host.querySelector("#p-time").value, pattern, dow, doseMg: mg, stopped: host.querySelector("#p-stopped").checked, cycleOn: on, cycleOff: off };
     if (shift && delta) { o.pauses = (s.pauses || []).map(p => [addDays(p[0], delta), addDays(p[1], delta)]); o.extra = (s.extra || []).map(x => addDays(x, delta)); }
     S.plan[d.id] = Object.assign({}, S.plan[d.id] || {}, o); save(); closeSheet(); toast("Plan actualizat"); render();
   },
