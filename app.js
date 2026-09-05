@@ -148,6 +148,7 @@ function renderToday() {
   else h += slotBlock(ds, k);
   const nxt = nextDay(addDays(k, 1));
   if (nxt) h += `<div class="card"><h3>Următoarea zi cu administrări: ${esc(fmtL(nxt.k))}</h3><p class="muted">${nxt.ds.map(d => `${esc(d.sub.short)} ${fmtU(d.units)}`).join(" · ")}</p></div>`;
+  h += `<p class="tiny" style="text-align:center">v${APP_VERSION} · ${fmtL(APP_DATE)}</p>`;
   main.innerHTML = `<div class="view">${h}</div>`;
 }
 function nextDay(k) { const end = planEnd(); for (let i = 0; i < 60 && k <= end; i++, k = addDays(k, 1)) { const ds = dosesOn(k).filter(d => !d.skipped); if (ds.length) return { k, ds }; } return null; }
@@ -359,6 +360,7 @@ function renderSettings() {
       <div class="row wrap"><button class="btn" data-act="export">Exportă datele (JSON)</button><label class="btn" style="display:inline-flex;align-items:center">Importă JSON<input type="file" id="s-import" accept="application/json" class="hide"></label></div></div>
     <div class="card stack"><h2>Resetare</h2>
       <div class="row wrap"><button class="btn" data-act="plan-reset-all">Resetează planul la cel inițial</button><button class="btn danger" data-act="wipe">Șterge toate datele</button></div></div>
+    <div class="card stack"><h2>Versiune</h2><p>Peptide Tracker <b class="mono">v${APP_VERSION}</b> · ${fmtL(APP_DATE)} ${fromKey(APP_DATE).getFullYear()}</p><p class="tiny" id="s-upd">${navigator.serviceWorker && navigator.serviceWorker.controller ? "Rulează din cache offline; actualizările se descarcă automat la deschidere." : "Prima încărcare."}</p><div class="row wrap"><button class="btn" data-act="update-check">Caută versiune nouă</button><button class="btn" data-act="reload">Reîncarcă aplicația</button></div></div>
     <div class="card"><p class="tiny">Peptide Tracker · plan din fișa furnizorului MKM și raportul de analiză (19 aug 2026). Nu este recomandare medicală. Dozele sunt cele raportate în literatură și comunitate, nevalidate clinic.</p></div>`;
   main.innerHTML = `<div class="view">${h}</div>`;
   $("#s-import").addEventListener("change", importJSON);
@@ -513,6 +515,8 @@ const A = {
   "plan-reset-all": () => { if (confirm("Resetezi toate modificările planului (datele, fiolele și jurnalul rămân)?")) { S.plan = {}; S.days = {}; save(); toast("Plan resetat"); render(); } },
   "settings-save": () => { S.settings.am = $("#s-am").value || "06:45"; S.settings.pm = $("#s-pm").value || "21:00"; S.notified = {}; save(); toast("Ore salvate"); render(); },
   "notif-enable": enableNotifications,
+  "update-check": async () => { try { const r = await navigator.serviceWorker.getRegistration(); if (!r) return toast("Service worker inactiv"); toast("Verific..."); await r.update(); setTimeout(() => { if (!updateReady) toast("Ești la ultima versiune (v" + APP_VERSION + ")"); }, 2500); } catch (e) { toast("Nu am putut verifica (offline?)"); } },
+  "reload": () => location.reload(),
   "notif-now": () => { const k = todayKey(); const ds = dosesOn(k).filter(d => !d.logged && !d.skipped); if (!ds.length) return toast("Nimic de administrat azi"); checkDueNow(true); toast("Reminder trimis"); },
   "notif-test": () => notify("Peptide Tracker", "Notificările funcționează. Așa vei fi anunțat la " + S.settings.am + " și " + S.settings.pm + "."),
   "ics": () => download("peptide-plan.ics", buildICS(), "text/calendar"),
@@ -535,7 +539,23 @@ function render() {
 }
 
 /* ---------- pornire ---------- */
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").then(r => r.active && r.active.postMessage("check")).catch(() => {});
+let updateReady = false;
+function showUpdateBar() {
+  updateReady = true;
+  if ($("#updbar")) return;
+  const b = document.createElement("div"); b.id = "updbar"; b.className = "alert ok"; b.style.cssText = "position:fixed;left:12px;right:12px;bottom:calc(var(--nav-h) + 12px);z-index:15;display:flex;align-items:center;gap:10px";
+  b.innerHTML = `<span class="grow"><b>Versiune nouă descărcată</b>Reîncarcă pentru a o folosi.</span><button class="btn small primary" data-act="reload">Reîncarcă</button>`;
+  document.body.appendChild(b);
+}
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js").then(r => {
+    if (r.active) r.active.postMessage("check");
+    if (r.waiting && navigator.serviceWorker.controller) showUpdateBar();
+    r.addEventListener("updatefound", () => { const w = r.installing; if (!w) return; w.addEventListener("statechange", () => { if (w.state === "installed" && navigator.serviceWorker.controller) showUpdateBar(); }); });
+  }).catch(() => {});
+  let refreshed = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => { if (updateReady && !refreshed) { refreshed = true; location.reload(); } });
+}
 render();
 checkDueNow(); scheduleUpcoming();
 setInterval(checkDueNow, 60 * 1000);
