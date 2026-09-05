@@ -67,6 +67,8 @@ function scheduled(s, k) {
 const dosesOn = k => allSubs().map(s => scheduled(s, k)).filter(Boolean);
 const planEnd = () => allSubs().reduce((m, s) => s.to > m ? s.to : m, PLAN_START);
 const weekOf = k => Math.floor(diffDays(PLAN_START, k) / 7) + 1;
+const planWeeks = () => Math.max(PLAN_WEEKS, Math.ceil((diffDays(PLAN_START, planEnd()) + 1) / 7));
+const doseCount = s => { let n = 0; for (let k = s.from; k <= s.to; k = addDays(k, 1)) if (scheduled(s, k)) n++; return n; };
 
 /* ---------- UI de baza ---------- */
 let view = "today", selDay = todayKey();
@@ -142,7 +144,7 @@ function renderToday() {
   const ds = dosesOn(k);
   const w = weekOf(k);
   $("#title").textContent = "Azi";
-  $("#subtitle").textContent = `${fmtFull(k)}${w >= 1 && w <= PLAN_WEEKS ? ` · săptămâna ${w} din ${PLAN_WEEKS}` : ""}`;
+  $("#subtitle").textContent = `${fmtFull(k)}${w >= 1 && w <= planWeeks() ? ` · săptămâna ${w} din ${planWeeks()}` : ""}`;
   let h = alertsFor(k);
   if (!ds.length) h += `<div class="card"><h2>Nicio administrare azi</h2><p class="muted">${k < PLAN_START ? "Planul începe pe " + fmtL(PLAN_START) + "." : k > planEnd() ? "Planul s-a încheiat. Washout înainte de un al doilea ciclu." : "Zi liberă în calendar."}</p></div>`;
   else h += slotBlock(ds, k);
@@ -158,7 +160,7 @@ function renderCal() {
   const w = Math.floor(diffDays(PLAN_START, selDay) / 7);
   const ws = addDays(PLAN_START, w * 7);
   $("#title").textContent = "Calendar";
-  $("#subtitle").textContent = `Săptămâna ${w + 1}${w + 1 <= PLAN_WEEKS ? " din " + PLAN_WEEKS : ""} · ${fmt(ws)} – ${fmt(addDays(ws, 6))}`;
+  $("#subtitle").textContent = `Săptămâna ${w + 1}${w + 1 <= planWeeks() ? " din " + planWeeks() : ""} · ${fmt(ws)} – ${fmt(addDays(ws, 6))}`;
   const intro = allSubs().filter(s => !s.stopped && s.from >= ws && s.from <= addDays(ws, 6)).map(s => s.short);
   let days = "";
   for (let i = 0; i < 7; i++) {
@@ -173,24 +175,25 @@ function renderCal() {
     ${EVENTS[selDay] ? `<div class="alert info">${esc(EVENTS[selDay])}</div>` : ""}
     ${ds.length ? slotBlock(ds, selDay) : `<p class="muted">Nicio administrare în această zi.</p>`}
   </div>`;
-  h += `<div class="card"><h2>Ansamblu pe ${PLAN_WEEKS} săptămâni</h2><p class="tiny" style="margin-bottom:8px">Bară plină = zilnic, estompată = 2-3x/săpt., punctată = pauză. Culoarea = momentul zilei.</p>${gantt()}</div>`;
-  h += `<div class="card"><h2>Editează planul</h2><div class="stack">${allSubs().map(s => `<div class="row between"><div class="grow"><b>${esc(s.short)}</b> <span class="tiny">${s.stopped ? "oprit" : fmt(s.from) + " – " + fmt(s.to) + " · " + tl(s.time) + " · " + doseLabel(s, s.doseMg) + " = " + fmtU(unitsFor(s, s.doseMg, activeVial(s.id)))}</span>${S.plan[s.id] ? ' <span class="chip acc">modificat</span>' : ""}</div><button class="btn small" data-act="plan-edit" data-id="${s.id}">Editează</button></div>`).join("")}</div></div>`;
+  h += `<div class="card"><h2>Ansamblu pe ${planWeeks()} săptămâni</h2><p class="tiny" style="margin-bottom:8px">O coloană = o săptămână. Bară plină = zilnic, estompată = 2-3x/săpt., punctată = pauză. Numărul de lângă substanță = doze planificate până la epuizarea stocului.</p>${gantt()}</div>`;
+  h += `<div class="card"><h2>Editează planul</h2><div class="stack">${allSubs().map(s => `<div class="row between"><div class="grow"><b>${esc(s.short)}</b> <span class="tiny">${s.stopped ? "oprit" : fmt(s.from) + " – " + fmt(s.to) + " " + fromKey(s.to).getFullYear() + " · " + doseCount(s) + " doze · " + tl(s.time) + " · " + doseLabel(s, s.doseMg) + " = " + fmtU(unitsFor(s, s.doseMg, activeVial(s.id)))}</span>${S.plan[s.id] ? ' <span class="chip acc">modificat</span>' : ""}</div><button class="btn small" data-act="plan-edit" data-id="${s.id}">Editează</button></div>`).join("")}</div></div>`;
   main.innerHTML = `<div class="view">${h}</div>`;
 }
 function gantt() {
   const cur = weekOf(todayKey());
-  let g = `<div class="n h">Substanța</div>`;
-  for (let w = 1; w <= PLAN_WEEKS; w++) g += `<div class="h ${w === cur ? "cur" : ""}">${w}</div>`;
+  const W = planWeeks();
+  let g = `<div class="n h">Substanța · doze</div>`;
+  for (let w = 1; w <= W; w++) g += `<div class="h ${w === cur ? "cur" : ""}">${w}</div>`;
   for (const s of allSubs()) {
-    g += `<div class="n">${esc(s.short)}</div>`;
-    for (let w = 1; w <= PLAN_WEEKS; w++) {
+    g += `<div class="n">${esc(s.short)} <span class="tiny mono">${doseCount(s)}</span></div>`;
+    for (let w = 1; w <= W; w++) {
       const ws = addDays(PLAN_START, (w - 1) * 7), we = addDays(ws, 6);
       let any = false; for (let i = 0; i < 7; i++) if (scheduled(s, addDays(ws, i))) { any = true; break; }
       const paused = (s.pauses || []).some(p => p[0] <= we && p[1] >= ws) && !s.stopped;
       g += `<div class="b">${any ? `<div class="bar ${s.time} ${s.pattern === "dow" ? "part" : ""}"></div>` : paused ? `<div class="bar off"></div>` : ""}</div>`;
     }
   }
-  return `<div class="gantt"><div class="g">${g}</div></div>`;
+  return `<div class="gantt"><div class="g" style="grid-template-columns:120px repeat(${W},26px);min-width:${120 + W * 26}px">${g}</div></div>`;
 }
 
 /* ---------- ecran Fiole ---------- */

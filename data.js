@@ -1,7 +1,7 @@
 /* Datele planului: substantele din comanda MKM (august 2026), dozele standard din fisa
    furnizorului si avertismentele din raportul de analiza. Tot ce e aici poate fi
    suprascris din aplicatie (Calendar -> Editeaza planul). */
-const APP_VERSION = "1.2";
+const APP_VERSION = "1.3";
 const APP_DATE = "2026-09-05";
 const PLAN_START = "2026-09-05";
 const PLAN_WEEKS = 16;
@@ -9,8 +9,8 @@ const PLAN_WEEKS = 16;
 const SUBS = [
   {
     id: "shb", name: "SUPER Human Blend", short: "SHB",
-    from: "2026-09-05", to: "2026-12-25", time: "am", route: "SC",
-    pattern: "dow", dow: [1, 3, 5], extra: ["2026-09-05"], pauses: [["2026-10-31", "2026-11-13"]],
+    from: "2026-09-05", to: "2027-03-31", time: "am", route: "SC",
+    pattern: "dow", dow: [1, 3, 5], extra: ["2026-09-05"], pauses: [],
     unit: "ml", doseMg: 86.5, mgPerMl: 86.5,
     vialMg: 865, vialMl: 10, ready: true, waterMl: 0, stabilityDays: 21, stock: 10,
     test: true, testNote: "test ½ doză, la prânz (SS-31 dimineața)",
@@ -24,7 +24,7 @@ const SUBS = [
     ],
     stab: "După prima puncție: 14-21 zile, la întuneric, nu se congelează.",
     flag: "Doze subterapeutice (raport): aceleași substanțe se obțin oral la doze de 10-20x mai mari.",
-    cycle: "L/Mi/V; 8 săpt. on, 2 săpt. off (31 oct–13 nov), apoi reia"
+    cycle: "L/Mi/V până la epuizarea stocului: 10 flacoane × ~9 doze = 90 doze, până pe 31 mar 2027"
   },
   {
     id: "ss31", name: "SS-31 (Elamipretide)", short: "SS-31",
@@ -42,11 +42,11 @@ const SUBS = [
     ],
     stab: "Reconstituit: 21-28 zile la 2-8 °C. La 5 mg/zi fiola se termină în 2 zile.",
     flag: "Stoc: 10 fiole = 20 de zile la 5 mg/zi. Ciclul raportat este 4-8 săptămâni; ar mai trebui 1-3 cutii.",
-    cycle: "zilnic, 20 zile"
+    cycle: "zilnic, 20 zile: 10 fiole × 2 doze, până pe 24 sep"
   },
   {
     id: "bb10", name: "BB10 (BPC-157 + TB-500)", short: "BB10",
-    from: "2026-09-12", to: "2026-10-23", time: "am", route: "SC",
+    from: "2026-09-12", to: "2027-03-30", time: "am", route: "SC",
     pattern: "daily", unit: "mg", doseMg: 0.5,
     vialMg: 10, waterMl: 2, stabilityDays: 28, stock: 10,
     test: true, testNote: "test ½ doză",
@@ -59,12 +59,12 @@ const SUBS = [
       "Scrie data pe fiolă; frigider 2-8 °C."
     ],
     stab: "Reconstituit: 21-28 zile la 2-8 °C. O fiolă = 20 de doze.",
-    flag: "Antidoping: BPC-157 (S0) și TB-500 (S2) sunt interzise WADA.",
-    cycle: "zilnic, 6 săptămâni"
+    flag: "Antidoping: BPC-157 (S0) și TB-500 (S2) sunt interzise WADA. Raportul recomandă cicluri de 4-6 săpt. cu pauză; planul merge continuu până la epuizarea stocului, la alegerea ta.",
+    cycle: "zilnic până la epuizarea stocului: 10 fiole × 20 doze = 200 zile, până pe 30 mar 2027"
   },
   {
     id: "nad", name: "NAD+", short: "NAD+",
-    from: "2026-09-19", to: "2026-10-16", time: "am", route: "SC lent",
+    from: "2026-09-19", to: "2026-12-27", time: "am", route: "SC lent",
     pattern: "daily", unit: "mg", doseMg: 100,
     vialMg: 1000, waterMl: 3, stabilityDays: 14, stock: 10,
     test: false, titration: [{ days: 3, mg: 25, note: "titrare, zile 1-3" }, { days: 4, mg: 50, note: "titrare, zile 4-7" }],
@@ -79,11 +79,11 @@ const SUBS = [
     ],
     stab: "Reconstituit: max 14 zile (cel mult 21). La 100 mg/zi fiola se termină în ~10 zile.",
     flag: "Începe cu doză mică și crește treptat (fișa furnizorului). Nu crește dacă reacția locală e intensă.",
-    cycle: "zilnic, 4 săptămâni, cu titrare"
+    cycle: "zilnic până la epuizarea stocului: 10 fiole ≈ 100 zile (cu titrare), până pe 27 dec"
   },
   {
     id: "gsh", name: "Glutation", short: "Glutation",
-    from: "2026-09-28", to: "2026-11-20", time: "pm", route: "SC",
+    from: "2026-09-28", to: "2026-12-04", time: "pm", route: "SC",
     pattern: "dow", dow: [1, 3, 5], unit: "mg", doseMg: 200,
     vialMg: 600, waterMl: 3, stabilityDays: 14, stock: 10,
     test: true, testNote: "test ½ doză",
@@ -98,11 +98,11 @@ const SUBS = [
     ],
     stab: "Reconstituit: 7-14 zile, nu mai mult. Galben = aruncă.",
     flag: "Nu prelungi fiola peste 14 zile.",
-    cycle: "L/Mi/V, 8 săptămâni"
+    cycle: "L/Mi/V până la epuizarea stocului: 10 fiole × 3 doze = 30 doze, până pe 4 dec"
   },
   {
     id: "motsc", name: "MOTS-c", short: "MOTS-c",
-    from: "2026-10-05", to: "2026-11-26", time: "am", route: "SC",
+    from: "2026-10-05", to: "2026-12-10", time: "am", route: "SC",
     pattern: "dow", dow: [1, 4], unit: "mg", doseMg: 5,
     vialMg: 10, waterMl: 2, stabilityDays: 14, stock: 10,
     test: true, testNote: "test ½ doză",
@@ -115,11 +115,11 @@ const SUBS = [
     ],
     stab: "Reconstituit: 7-14 zile (max 21-28). Stabilitate mai slabă decât alte peptide.",
     flag: "Efect pe glicemie în modele animale. Cu antidiabetice sau hipoglicemii, monitorizează.",
-    cycle: "L/J, 8 săptămâni"
+    cycle: "L/J până la epuizarea stocului: 10 fiole × 2 doze = 20 doze, până pe 10 dec"
   },
   {
     id: "ghk", name: "GHK-Cu", short: "GHK-Cu",
-    from: "2026-10-10", to: "2026-12-04", time: "pm", route: "SC",
+    from: "2026-10-10", to: "2027-04-27", time: "pm", route: "SC",
     pattern: "daily", unit: "mg", doseMg: 2.5,
     vialMg: 50, waterMl: 5, stabilityDays: 28, stock: 10,
     test: true, testNote: "test ½ doză",
@@ -132,8 +132,8 @@ const SUBS = [
       "Seara. Ține 5-10 s înainte de a scoate acul. Frigider 2-8 °C."
     ],
     stab: "Reconstituit: 21-28 zile la 2-8 °C.",
-    flag: "Încărcare cu cupru: 2,5 mg/zi ≈ 0,4 mg cupru injectat, fără filtrul intestinal. Verifică cupru și zinc seric înainte și după.",
-    cycle: "zilnic, 8 săptămâni"
+    flag: "Încărcare cu cupru: 2,5 mg/zi ≈ 0,4 mg cupru injectat, fără filtrul intestinal; pe 200 de zile ≈ 86 mg cupru. Raportul recomandă cicluri de 8-12 săpt. Analize cupru și zinc seric la fiecare 8 săptămâni; oprește dacă cresc.",
+    cycle: "zilnic până la epuizarea stocului: 10 fiole × 20 doze = 200 zile, până pe 27 apr 2027"
   },
   {
     id: "epi", name: "Epithalon", short: "Epithalon",
@@ -150,7 +150,7 @@ const SUBS = [
     ],
     stab: "Reconstituit: 21-30 zile la 2-8 °C.",
     flag: "Activare telomerază: fără date de siguranță pe termen lung. De evitat la antecedente oncologice personale sau familiale.",
-    cycle: "zilnic, 20 zile; se repetă la 6 luni"
+    cycle: "zilnic, 20 zile: 10 fiole × 2 doze, până pe 5 nov; se repetă la 6 luni"
   },
   {
     id: "pin", name: "Pinealon", short: "Pinealon",
@@ -167,11 +167,11 @@ const SUBS = [
     ],
     stab: "Reconstituit: 21-28 zile la 2-8 °C.",
     flag: "Se suprapune cu Epithalon 24 oct–5 nov (aceeași familie). Un efect apărut în acest interval nu poate fi atribuit.",
-    cycle: "zilnic, 20 zile"
+    cycle: "zilnic, 20 zile: 10 fiole × 2 doze, până pe 12 nov"
   },
   {
     id: "dsip", name: "DSIP", short: "DSIP",
-    from: "2026-10-31", to: "2026-11-27", time: "pm", route: "SC",
+    from: "2026-10-31", to: "2027-07-07", time: "pm", route: "SC",
     pattern: "daily", unit: "mcg", doseMg: 0.2,
     vialMg: 5, waterMl: 2, stabilityDays: 28, stock: 10,
     test: true, testNote: "test ½ doză",
@@ -184,12 +184,12 @@ const SUBS = [
       "Cu 30-60 min înainte de culcare. Frigider 2-8 °C."
     ],
     stab: "Reconstituit: 21-28 zile. O fiolă = 25 de doze.",
-    flag: "Micrograme, nu miligrame. Doza corectă este 8 U, nu seringă plină.",
-    cycle: "zilnic, 4 săptămâni, apoi la nevoie"
+    flag: "Micrograme, nu miligrame. Doza corectă este 8 U, nu seringă plină. Raportul îl vede intermitent, la nevoie; planul merge continuu până la epuizarea stocului, la alegerea ta.",
+    cycle: "zilnic până la epuizarea stocului: 10 fiole × 25 doze = 250 zile, până pe 7 iul 2027"
   },
   {
     id: "semax", name: "Semax", short: "Semax",
-    from: "2026-11-07", to: "2026-12-18", time: "am", route: "SC",
+    from: "2026-11-07", to: "2027-04-15", time: "am", route: "SC",
     pattern: "daily", unit: "mcg", doseMg: 0.3,
     vialMg: 5, waterMl: 2, stabilityDays: 28, stock: 10,
     test: true, testNote: "test ½ doză",
@@ -201,12 +201,12 @@ const SUBS = [
       "Dimineața sau până după-amiază; seara dă insomnie. Frigider 2-8 °C."
     ],
     stab: "Reconstituit: 21-28 zile. O fiolă = 16 doze.",
-    flag: "Formularea studiată clinic este intranazală. Micrograme: 12 U, nu seringă plină.",
-    cycle: "zilnic, 6 săptămâni"
+    flag: "Formularea studiată clinic este intranazală. Micrograme: 12 U, nu seringă plină. Raportul recomandă cicluri de 4-6 săpt. cu pauză; planul merge continuu până la epuizarea stocului.",
+    cycle: "zilnic până la epuizarea stocului: 10 fiole × 16 doze = 160 zile, până pe 15 apr 2027"
   },
   {
     id: "selank", name: "Selank", short: "Selank",
-    from: "2026-11-14", to: "2026-12-25", time: "pm", route: "SC",
+    from: "2026-11-14", to: "2027-04-22", time: "pm", route: "SC",
     pattern: "daily", unit: "mcg", doseMg: 0.3,
     vialMg: 5, waterMl: 2, stabilityDays: 30, stock: 10,
     test: true, testNote: "test ½ doză",
@@ -218,8 +218,8 @@ const SUBS = [
       "Seara, separat de Semax (dimineața). Frigider 2-8 °C."
     ],
     stab: "Reconstituit: 21-30 zile. O fiolă = 16 doze.",
-    flag: "Formularea studiată clinic este intranazală. Micrograme: 12 U, nu seringă plină.",
-    cycle: "zilnic, 6 săptămâni"
+    flag: "Formularea studiată clinic este intranazală. Micrograme: 12 U, nu seringă plină. Raportul recomandă cicluri de 4-6 săpt. cu pauză; planul merge continuu până la epuizarea stocului.",
+    cycle: "zilnic până la epuizarea stocului: 10 fiole × 16 doze = 160 zile, până pe 22 apr 2027"
   }
 ];
 
@@ -227,19 +227,20 @@ const EVENTS = {
   "2026-09-05": "Start. SS-31 test dimineața (50 U), SHB test la prânz (50 U), la ore diferite ca să poți atribui o reacție.",
   "2026-09-24": "Ultima zi SS-31: stocul de 10 fiole s-a terminat.",
   "2026-09-26": "NAD+ trece la 100 mg = 30 U dacă 50 mg a fost tolerat.",
-  "2026-10-16": "Ultima zi NAD+ (4 săptămâni).",
-  "2026-10-23": "Ultima zi BB10 (6 săptămâni).",
   "2026-10-24": "Pinealon în paralel cu Epithalon până pe 5 nov.",
-  "2026-10-30": "Ultima zi SHB înainte de pauza de 2 săptămâni.",
-  "2026-11-05": "Ultima zi Epithalon. Se repetă peste 6 luni.",
-  "2026-11-12": "Ultima zi Pinealon.",
-  "2026-11-16": "SHB reia L/Mi/V.",
-  "2026-11-20": "Ultima zi Glutation.",
-  "2026-11-26": "Ultima zi MOTS-c.",
-  "2026-11-27": "Ultima zi DSIP planificată; apoi la nevoie.",
-  "2026-12-04": "Ultima zi GHK-Cu. Repetă analiza cupru/zinc.",
-  "2026-12-18": "Ultima zi Semax.",
-  "2026-12-25": "Ultima zi Selank. Sfârșitul planului; washout înainte de un al doilea ciclu."
+  "2026-11-05": "Ultima zi Epithalon (stoc epuizat). Se repetă peste 6 luni.",
+  "2026-11-12": "Ultima zi Pinealon (stoc epuizat).",
+  "2026-12-04": "Ultima zi Glutation (stoc epuizat). Analize cupru/zinc pentru GHK-Cu (8 săptămâni).",
+  "2026-12-10": "Ultima zi MOTS-c (stoc epuizat).",
+  "2026-12-27": "Ultima zi NAD+ (stoc epuizat).",
+  "2027-01-29": "GHK-Cu: 16 săptămâni. Repetă analiza cupru/zinc.",
+  "2027-03-26": "GHK-Cu: 24 săptămâni. Repetă analiza cupru/zinc.",
+  "2027-03-30": "Ultima zi BB10 (stoc epuizat).",
+  "2027-03-31": "Ultima zi SHB (stoc epuizat).",
+  "2027-04-15": "Ultima zi Semax (stoc epuizat).",
+  "2027-04-22": "Ultima zi Selank (stoc epuizat).",
+  "2027-04-27": "Ultima zi GHK-Cu (stoc epuizat).",
+  "2027-07-07": "Ultima zi DSIP (stoc epuizat). Sfârșitul planului."
 };
 
 const SITES = ["abdomen stânga", "abdomen dreapta", "coapsă stângă", "coapsă dreaptă", "braț stâng", "braț drept"];
