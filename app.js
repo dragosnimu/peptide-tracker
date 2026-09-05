@@ -528,7 +528,17 @@ const A = {
   "plan-reset-all": () => { if (confirm("Resetezi toate modificările planului (datele, fiolele și jurnalul rămân)?")) { S.plan = {}; S.days = {}; save(); toast("Plan resetat"); render(); } },
   "settings-save": () => { S.settings.am = $("#s-am").value || "06:45"; S.settings.pm = $("#s-pm").value || "21:00"; S.notified = {}; save(); toast("Ore salvate"); render(); },
   "notif-enable": enableNotifications,
-  "update-check": async () => { try { const r = await navigator.serviceWorker.getRegistration(); if (!r) return toast("Service worker inactiv"); toast("Verific..."); await r.update(); setTimeout(() => { if (!updateReady) toast("Ești la ultima versiune (v" + APP_VERSION + ")"); }, 2500); } catch (e) { toast("Nu am putut verifica (offline?)"); } },
+  "update-check": async () => {
+    try {
+      toast("Verific...");
+      const txt = await fetch("data.js?t=" + Date.now(), { cache: "no-store" }).then(r => r.text());
+      const m = txt.match(/APP_VERSION = "([^"]+)"/); const remote = m ? m[1] : null;
+      const r = await navigator.serviceWorker.getRegistration();
+      if (r) await r.update();
+      if (remote && remote !== APP_VERSION) { toast("Versiunea " + remote + " e pe server; reîncarc..."); updateReady = true; setTimeout(() => location.reload(), 1800); }
+      else toast("Ești la ultima versiune (v" + APP_VERSION + ")");
+    } catch (e) { toast("Nu am putut verifica (offline?)"); }
+  },
   "reload": () => location.reload(),
   "notif-now": () => { const k = todayKey(); const ds = dosesOn(k).filter(d => !d.logged && !d.skipped); if (!ds.length) return toast("Nimic de administrat azi"); checkDueNow(true); toast("Reminder trimis"); },
   "notif-test": () => notify("Peptide Tracker", "Notificările funcționează. Așa vei fi anunțat la " + S.settings.am + " și " + S.settings.pm + "."),
@@ -561,7 +571,7 @@ function showUpdateBar() {
   document.body.appendChild(b);
 }
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("sw.js").then(r => {
+  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(r => {
     if (r.active) r.active.postMessage("check");
     if (r.waiting && navigator.serviceWorker.controller) showUpdateBar();
     r.addEventListener("updatefound", () => { const w = r.installing; if (!w) return; w.addEventListener("statechange", () => { if (w.state === "installed" && navigator.serviceWorker.controller) showUpdateBar(); }); });
