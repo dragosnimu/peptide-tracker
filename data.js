@@ -1,7 +1,7 @@
 /* Datele planului: substantele din comanda MKM (august 2026), dozele standard din fisa
    furnizorului si avertismentele din raportul de analiza. Tot ce e aici poate fi
    suprascris din aplicatie (Calendar -> Editeaza planul). */
-const APP_VERSION = "1.7";
+const APP_VERSION = "1.8";
 const APP_DATE = "2026-09-05";
 const PLAN_START = "2026-09-05";
 const PLAN_WEEKS = 16;
@@ -30,14 +30,14 @@ const SUBS = [
     id: "ss31", name: "SS-31 (Elamipretide)", short: "SS-31",
     from: "2026-09-05", to: "2026-09-24", time: "am", route: "SC", cycleOn: 0, cycleOff: 0,
     pattern: "daily", unit: "mg", doseMg: 5,
-    vialMg: 10, waterMl: 2, stabilityDays: 28, stock: 10,
-    test: true, testNote: "test ½ doză, dimineața",
+    vialMg: 10, waterMl: 1, stabilityDays: 28, stock: 10,
+    test: false,
     what: "Tetrapeptidă care se leagă de cardiolipina mitocondrială. Singurul compus cu studii clinice de fază 3 (rezultate mixte).",
     steps: [
       "Fiola la temperatura camerei. Dezinfectează dopul.",
-      "Trage 2 ml apă bacteriostatică și injecteaz-o lent pe peretele fiolei, nu pe pulbere.",
+      "Trage 1 ml apă bacteriostatică și injecteaz-o lent pe peretele fiolei, nu pe pulbere.",
       "Rotește ușor între palme. Nu agita. Lichid limpede, incolor; tulbure sau gălbui = aruncă.",
-      "Rezultat: 5 mg/ml. 5 mg = 1,0 ml = 100 U (seringă plină).",
+      "Rezultat: 10 mg/ml. 5 mg = 0,5 ml = 50 U.",
       "Scrie data pe fiolă și pune-o la frigider (2-8 °C), ferită de lumină."
     ],
     stab: "Reconstituit: 21-28 zile la 2-8 °C. La 5 mg/zi fiola se termină în 2 zile.",
@@ -224,7 +224,7 @@ const SUBS = [
 ];
 
 const EVENTS = {
-  "2026-09-05": "Start. SS-31 test dimineața (50 U), SHB test la prânz (50 U), la ore diferite ca să poți atribui o reacție.",
+  "2026-09-05": "Start. SS-31 5 mg = 50 U dimineața (fiolă cu 1 ml apă), SHB test la prânz (50 U).",
   "2026-09-24": "Ultima zi SS-31: stocul de 10 fiole s-a terminat.",
   "2026-09-26": "NAD+ trece la 100 mg = 30 U dacă 50 mg a fost tolerat.",
   "2026-10-16": "NAD+: sfârșitul ciclului 1. Pauză 2 săptămâni, reia pe 31 oct.",
