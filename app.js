@@ -24,9 +24,18 @@ const nowHM = () => { const d = new Date(); return pad(d.getHours()) + ":" + pad
 
 /* ---------- stare ---------- */
 const SK = "peptide-tracker-v1";
-const defaultState = () => ({ v: 1, settings: { am: "06:45", pm: "21:00", notif: false }, plan: {}, days: {}, vials: {}, log: [], notified: {}, labs: [], supplies: { s03: null, s1: null, s3: null, waterMl: null, swabs: null, updated: null }, sync: { token: "", repo: "dragosnimu/peptide-tracker", branch: "data", path: "peptide-backup.json", lastSync: 0, lastError: "", calId: "", calHash: 0, calAt: 0, calError: "" }, meta: { updatedAt: 0 }, orders: [] });
+const defaultState = () => ({ v: 1, settings: { am: "06:45", pm: "21:00", notif: false }, plan: {}, days: {}, vials: {}, log: [], notified: {}, labs: [], supplies: { s03: null, s1: null, s3: null, waterMl: null, swabs: null, updated: null }, sync: { token: "", repo: "dragosnimu/peptide-tracker", branch: "data", path: "peptide-backup.json", lastSync: 0, lastError: "", lastSha: "", calId: "", calHash: 0, calAt: 0, calError: "" }, meta: { updatedAt: 0 }, orders: [], auth: { enabled: false, clientId: "", allowed: [], days: 30 } });
 let S = load();
-function load() { try { const s = JSON.parse(localStorage.getItem(SK)); if (s && s.v) return Object.assign(defaultState(), s); } catch (e) {} return defaultState(); }
+function migrate(s) {
+  const d = defaultState(); const out = Object.assign(d, s);
+  for (const k of ["settings", "sync", "supplies", "meta", "auth"]) out[k] = Object.assign({}, defaultState()[k], (s && s[k]) || {});
+  for (const k of ["log", "labs", "orders"]) if (!Array.isArray(out[k])) out[k] = [];
+  for (const k of ["plan", "days", "vials", "notified"]) if (!out[k] || typeof out[k] !== "object") out[k] = {};
+  const hasData = out.log.length || Object.keys(out.vials).length || out.labs.length;
+  if ((!s || !s.meta) && hasData) out.meta.updatedAt = Date.now();
+  return out;
+}
+function load() { try { const s = JSON.parse(localStorage.getItem(SK)); if (s && s.v) return migrate(s); } catch (e) {} return defaultState(); }
 let saveTimer = null;
 function save(noTouch) {
   if (!noTouch) S.meta.updatedAt = Date.now();
@@ -84,9 +93,9 @@ const doseCount = s => { let n = 0; for (let k = s.from; k <= s.to; k = addDays(
 let view = "today", selDay = todayKey();
 const main = $("#main");
 function toast(msg) { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
-function openSheet(html, mount) {
+function openSheet(html, mount, noDismiss) {
   const host = $("#sheet");
-  host.innerHTML = `<div class="sheet-bg" data-act="close-bg"><div class="sheet" role="dialog"><div class="handle"></div>${html}</div></div>`;
+  host.innerHTML = `<div class="sheet-bg" ${noDismiss ? "" : 'data-act="close-bg"'}><div class="sheet" role="dialog"><div class="handle"></div>${html}</div></div>`;
   if (mount) mount(host);
 }
 function closeSheet() { $("#sheet").innerHTML = ""; }
@@ -109,7 +118,7 @@ function doseCard(d, k) {
   let actions;
   if (d.logged) actions = `<div class="row wrap"><span class="chip ok">administrat ${esc(d.logged.time || "")} · ${fmtU(d.logged.units)}</span>${d.logged.planned && Math.abs(d.logged.units - d.logged.planned.units) > 0.01 ? `<span class="chip warn">planificat ${fmtU(d.logged.planned.units)}</span>` : ""}${d.logged.feel ? `<span class="feel f${d.logged.feel}">${d.logged.feel}</span>` : ""}<span class="grow"></span><button class="btn small" data-act="log-edit" data-eid="${d.logged.id}">Detalii</button></div>`;
   else if (d.skipped) actions = `<div class="row wrap"><span class="chip">${d.moved ? "mutată pe mâine" : "sărită"}</span><span class="grow"></span><button class="btn small" data-act="unskip" data-id="${s.id}" data-k="${k}">Anulează</button></div>`;
-  else actions = `<div class="row wrap"><button class="btn primary small" data-act="log-new" data-id="${s.id}" data-k="${k}">Administrat</button><button class="btn small" data-act="skip" data-id="${s.id}" data-k="${k}">Sari</button><button class="btn small" data-act="move" data-id="${s.id}" data-k="${k}">Mâine</button><span class="grow"></span><button class="btn small" data-act="dose-edit" data-id="${s.id}" data-k="${k}">Doză</button></div>`;
+  else actions = `<div class="row wrap"><button class="btn primary small" data-act="log-new" data-id="${s.id}" data-k="${k}">Administrat</button><button class="btn small" data-act="skip" data-id="${s.id}" data-k="${k}">Sari</button>${scheduled(s, addDays(k, 1)) ? "" : `<button class="btn small" data-act="move" data-id="${s.id}" data-k="${k}">Mâine</button>`}<span class="grow"></span><button class="btn small" data-act="dose-edit" data-id="${s.id}" data-k="${k}">Doză</button></div>`;
   return `<div class="dose ${cls}">
     <div class="row between"><span class="name">${esc(s.short)}</span><span class="row" style="gap:6px">${hasIM(s) ? `<button class="chip acc" data-act="route-edit" data-id="${s.id}" title="Schimbă calea">${esc(s.route)} ▾</button>` : `<span class="chip">${esc(s.route)}</span>`}<span class="chip ${s.time}">${tl(s.time)}</span></span></div>
     <div class="row"><span class="u">${fmtU(d.units)}</span><span class="muted">${esc(d.label)}${d.units > 100 ? ` = ${num(d.units / 100)} ml (seringă de 3 ml)` : ""}</span></div>
@@ -151,6 +160,7 @@ function alertsFor(k) {
     else if (r === 0) a.push(`<div class="alert info"><b>${esc(s.short)}: reia după pauză (ciclul ${Math.floor(di / per) + 1})</b>Verifică dacă fiola activă mai e în termen; altfel prepară una nouă.</div>`);
   }
   a.push(...suppliesAlerts(k));
+  if (S.sync.token && S.sync.lastError) a.push(`<div class="alert"><b>Sincronizarea cu GitHub nu funcționează</b>${esc(S.sync.lastError)}. Verifică tokenul în Setări.</div>`);
   const due = labsDue();
   if (due) { const dl = diffDays(k, due.due); if (dl <= 7) a.push(`<div class="alert ${dl < 0 ? "" : "info"}"><b>Analize de sânge ${dl < 0 ? "restante de " + (-dl) + " zile" : dl === 0 ? "scadente azi" : "în " + dl + " zile (" + fmtL(due.due) + ")"}</b>${esc(due.why)}. Le înregistrezi în Jurnal → Analize.</div>`); }
   const news = allSubs().filter(s => s.from === k && !s.stopped);
@@ -446,7 +456,7 @@ function supplyForecast() {
   const runsOut = {};
   const st = S.supplies || {};
   const vs = {};
-  for (const sb of allSubs()) { const v = activeVial(sb.id); vs[sb.id] = v ? { opened: v.opened, left: v.leftMg } : null; perSub[sb.id] = { vials: 0, used: (S.vials[sb.id] || []).length, stock: sb.stock, short: sb.short }; }
+  for (const sb of allSubs()) { const v = activeVial(sb.id); vs[sb.id] = v ? { opened: v.opened, left: v.leftMg } : null; perSub[sb.id] = { vials: 0, used: (S.vials[sb.id] || []).filter(x => x.opened >= sb.from).length, stock: sb.stock, short: sb.short }; }
   for (let k = start; k <= end; k = addDays(k, 1)) {
     for (const dd of dosesOn(k)) {
       if (dd.skipped || (dd.logged && k === start)) continue;
@@ -554,43 +564,46 @@ async function ghPut(obj, sha) {
   if (!r.ok) throw new Error("GitHub " + r.status + (r.status === 401 ? ": token invalid" : r.status === 403 ? ": token fără drept de scriere" : r.status === 409 ? ": conflict, reîncearcă" : r.status === 404 ? ": repo sau ramură inexistentă" : ""));
   return (await r.json()).content.sha;
 }
-function schedulePush() { if (!ghCfg().token || /40[13]/.test(ghCfg().lastError || "")) return; clearTimeout(pushTimer); pushTimer = setTimeout(() => pushSync(false), 4000); }
+function schedulePush() { if (!ghCfg().token || /401/.test(ghCfg().lastError || "")) return; clearTimeout(pushTimer); pushTimer = setTimeout(() => pushSync(false), 4000); }
+let pendingConflict = null;
+const localHasData = () => !!(S.log.length || Object.keys(S.vials).length || S.labs.length || (S.orders || []).length);
+function raiseConflict(cur) { if ($("#sheet").innerHTML) pendingConflict = cur; else conflictSheet(cur); }
 async function pushSync(manual) {
   if (!ghCfg().token || syncBusy || !navigator.onLine) return;
   syncBusy = true;
   try {
     const cur = await ghGet();
-    if (cur && cur.data && cur.data.meta && cur.data.meta.updatedAt > S.meta.updatedAt && cur.data.meta.updatedAt > (S.sync.lastSync || 0)) { syncBusy = false; return conflictSheet(cur); }
-    await ghPut(exportable(), cur && cur.sha);
-    S.sync.lastSync = Date.now(); S.sync.lastError = ""; save(true);
+    const seen = S.sync.lastSha || "";
+    if (cur && cur.sha !== seen && (seen || (cur.data && localHasData()))) { syncBusy = false; return raiseConflict(cur); }
+    const sha = await ghPut(exportable(), cur && cur.sha);
+    S.sync.lastSha = sha; S.sync.lastSync = Date.now(); S.sync.lastError = ""; save(true);
     if (manual) toast("Sincronizat cu GitHub");
-    const el = $("#sync-status"); if (el) el.innerHTML = syncStatusHTML();
-  } catch (e) { S.sync.lastError = e.message; save(true); if (manual) toast(e.message); const el = $("#sync-status"); if (el) el.innerHTML = syncStatusHTML(); }
-  syncBusy = false;
-}
-async function pullSync(manual) {
-  if (!ghCfg().token || syncBusy || !navigator.onLine || (!manual && /40[13]/.test(ghCfg().lastError || ""))) return;
-  syncBusy = true;
-  try {
-    const cur = await ghGet();
-    if (!cur || !cur.data) { syncBusy = false; if (manual) toast("Nimic în cloud încă; trimit datele locale"); return pushSync(manual); }
-    const rem = cur.data.meta ? cur.data.meta.updatedAt : 0;
-    const localDirty = S.meta.updatedAt > (S.sync.lastSync || 0);
-    if (rem > S.meta.updatedAt) {
-      if (!localDirty) { adoptRemote(cur.data); if (manual) toast("Date actualizate din cloud"); }
-      else { syncBusy = false; return conflictSheet(cur); }
-    } else if (localDirty) { syncBusy = false; return pushSync(manual); }
-    else if (manual) toast("Totul e sincronizat");
-    S.sync.lastError = ""; save(true);
   } catch (e) { S.sync.lastError = e.message; save(true); if (manual) toast(e.message); }
   syncBusy = false;
   const el = $("#sync-status"); if (el) el.innerHTML = syncStatusHTML();
 }
-function adoptRemote(data) {
+async function pullSync(manual) {
+  if (!ghCfg().token || syncBusy || !navigator.onLine || (!manual && /401/.test(ghCfg().lastError || ""))) return;
+  syncBusy = true;
+  try {
+    const cur = await ghGet();
+    S.sync.lastError = "";
+    const localDirty = S.meta.updatedAt > (S.sync.lastSync || 0);
+    if (!cur || !cur.data) { syncBusy = false; if (manual) toast("Nimic în cloud încă; trimit datele locale"); return pushSync(manual); }
+    const seen = S.sync.lastSha || "";
+    if (cur.sha === seen) { syncBusy = false; if (localDirty) return pushSync(manual); if (manual) toast("Totul e sincronizat"); save(true); const el0 = $("#sync-status"); if (el0) el0.innerHTML = syncStatusHTML(); return; }
+    if (!localDirty && (seen || !localHasData())) { adoptRemote(cur.data, cur.sha); if (manual) toast("Date actualizate din cloud"); }
+    else { syncBusy = false; return raiseConflict(cur); }
+  } catch (e) { S.sync.lastError = e.message; save(true); if (manual) toast(e.message); }
+  syncBusy = false;
+  const el = $("#sync-status"); if (el) el.innerHTML = syncStatusHTML();
+}
+function adoptRemote(data, sha) {
   const keep = S.sync;
-  S = Object.assign(defaultState(), data);
-  S.sync = Object.assign({}, S.sync, keep, { lastSync: Date.now(), lastError: "" });
+  S = migrate(data);
+  S.sync = Object.assign({}, S.sync, keep, { calId: (data.sync && data.sync.calId) || keep.calId || "", lastSync: Date.now(), lastSha: sha || keep.lastSha || "", lastError: "" });
   save(true); render();
+  if (!authValid()) showLock("lock");
 }
 function conflictSheet(cur) {
   const rem = cur.data;
@@ -600,7 +613,7 @@ function conflictSheet(cur) {
       <div class="card"><b>Telefonul acesta</b><br><span class="tiny">${S.log.length} administrări · ${Object.values(S.vials).flat().length} fiole · ${S.labs.length} analize · modificat ${new Date(S.meta.updatedAt).toLocaleString("ro-RO")}</span></div>
       <div class="card"><b>Cloud (GitHub)</b><br><span class="tiny">${(rem.log || []).length} administrări · ${Object.values(rem.vials || {}).flat().length} fiole · ${(rem.labs || []).length} analize · modificat ${new Date(rem.meta ? rem.meta.updatedAt : 0).toLocaleString("ro-RO")}</span></div>
     </div>
-    <div class="row"><button class="btn primary grow" data-act="sync-keep-local">Păstrează telefonul</button><button class="btn grow" data-act="sync-keep-remote">Ia versiunea din cloud</button></div>`);
+    <div class="row"><button class="btn primary grow" data-act="sync-keep-local">Păstrează telefonul</button><button class="btn grow" data-act="sync-keep-remote">Ia versiunea din cloud</button></div>`, null, true);
   window.__conflict = cur;
 }
 function syncStatusHTML() {
@@ -667,7 +680,7 @@ function cycleSheet() {
       const picks = [...host.querySelectorAll("[data-cs]:checked")].map(i => i.dataset.cs);
       if (!picks.length) { host.querySelector("#c-preview").textContent = "Nimic bifat."; return; }
       let i = 0, out = [];
-      for (const id of picks) { const b = SUBS.find(x => x.id === id); const vials = +host.querySelector(`[data-cv="${id}"]`).value || 10; const from = addDays(start, i * step); const r = simulateEnd(Object.assign({}, b, S.plan[id] && S.plan[id].routeKey ? { routeKey: S.plan[id].routeKey } : {}, (b.routeOptions && S.plan[id] && S.plan[id].routeKey === "im") ? b.routeOptions.im : {}), from, vials); out.push(`<b>${esc(b.short)}</b>: ${fmtL(from)} → ${r.to ? fmtL(r.to) + " " + fromKey(r.to).getFullYear() : "?"} · ${r.doses} doze · ${r.vials} fiole`); i++; }
+      for (const id of picks) { const b = SUBS.find(x => x.id === id); const vials = +host.querySelector(`[data-cv="${id}"]`).value || 10; const from = addDays(start, i * step); const r = simulateEnd(Object.assign({}, sub(id), { test: false }), from, vials); out.push(`<b>${esc(b.short)}</b>: ${fmtL(from)} → ${r.to ? fmtL(r.to) + " " + fromKey(r.to).getFullYear() : "?"} · ${r.doses} doze · ${r.vials} fiole`); i++; }
       host.querySelector("#c-preview").innerHTML = out.join("<br>");
     };
     host.querySelectorAll("[data-cs],[data-cv],#c-start,#c-intro").forEach(el => el.addEventListener("change", preview));
@@ -680,7 +693,7 @@ function cycleSheet() {
 let calTimer = null;
 function icsHash(str) { let h = 0; const t = str.replace(/DTSTAMP:[^\r\n]*/g, ""); for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; return h; }
 function calUrl() { const c = ghCfg(); if (!c.calId) return ""; const [u, r] = c.repo.split("/"); return `https://${u}.github.io/${r}/cal/${c.calId}.ics`; }
-function scheduleCalPublish() { if (!ghCfg().token || !ghCfg().calId || /40[13]/.test((ghCfg().lastError || "") + (ghCfg().calError || ""))) return; clearTimeout(calTimer); calTimer = setTimeout(() => publishCal(false), 15000); }
+function scheduleCalPublish() { if (!ghCfg().token || !ghCfg().calId || /401/.test((ghCfg().lastError || "") + (ghCfg().calError || ""))) return; clearTimeout(calTimer); calTimer = setTimeout(() => publishCal(false), 15000); }
 async function publishCal(manual) {
   const c = ghCfg(); if (!c.token || !c.calId || !navigator.onLine) return;
   const ics = buildICS(), hs = icsHash(ics);
@@ -715,6 +728,71 @@ async function ghPutPath(path, branch, content, sha, message) {
   return (await r.json()).content.sha;
 }
 
+/* ---------- autentificare Google (blocare la deschidere) ---------- */
+const AK = "peptide-auth-session";
+function authSession() { try { return JSON.parse(localStorage.getItem(AK) || "null"); } catch (e) { return null; } }
+function authValid() { const a = S.auth || {}; if (!a.enabled) return true; const ss = authSession(); if (!ss || !ss.email) return false; if (a.allowed && a.allowed.length && !a.allowed.includes(ss.email)) return false; return Date.now() - ss.at < (a.days || 30) * 86400e3; }
+let gisPromise = null;
+function loadGIS() {
+  if (window.google && google.accounts && google.accounts.id) return Promise.resolve();
+  if (gisPromise) return gisPromise;
+  gisPromise = new Promise((res, rej) => {
+    const sc = document.createElement("script"); sc.src = "https://accounts.google.com/gsi/client"; sc.async = true; sc.defer = true;
+    sc.onload = () => res(); sc.onerror = () => { gisPromise = null; rej(new Error("gis")); };
+    document.head.appendChild(sc);
+    setTimeout(() => { if (!(window.google && google.accounts)) { gisPromise = null; rej(new Error("timeout")); } }, 8000);
+  });
+  return gisPromise;
+}
+function jwtPayload(tok) { try { const p = tok.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"); return JSON.parse(decodeURIComponent(escape(atob(p + "=".repeat((4 - p.length % 4) % 4))))); } catch (e) { return null; } }
+let lockMode = "lock"; // "lock" sau "enable"
+function showLock(mode) {
+  lockMode = mode || "lock";
+  const el = $("#lock"); const a = S.auth || {}; const ss = authSession();
+  el.innerHTML = `<div class="box">
+    <div style="font-size:40px">💉</div>
+    <h1>${lockMode === "enable" ? "Conectează-te ca să activezi blocarea" : "Peptide Tracker este blocat"}</h1>
+    <p class="st">${lockMode === "enable" ? "Contul cu care te conectezi acum devine singurul cont care poate deschide aplicația." : (a.allowed && a.allowed.length ? "Conectează-te cu " + esc(a.allowed.join(" sau ")) + "." : "Conectează-te cu contul Google configurat.")}</p>
+    <div class="gbtn" id="gbtn"><span class="st">Se încarcă butonul Google...</span></div>
+    <div class="st" id="lock-st"></div>
+    ${lockMode === "enable" ? `<button class="btn" data-act="lock-cancel">Renunță</button>` : ""}
+  </div>`;
+  el.classList.add("on"); el.setAttribute("aria-hidden", "false");
+  loadGIS().then(() => {
+    google.accounts.id.initialize({ client_id: a.clientId, callback: handleCredential, auto_select: false, itp_support: true });
+    const host = $("#gbtn"); host.innerHTML = "";
+    google.accounts.id.renderButton(host, { theme: "outline", size: "large", text: "signin_with", shape: "pill", locale: "ro" });
+    if (lockMode === "lock") google.accounts.id.prompt();
+  }).catch(() => {
+    $("#gbtn").innerHTML = `<span class="st" style="color:var(--warn)">Nu pot încărca autentificarea Google (fără internet?).</span>`;
+    if (lockMode === "lock" && ss && ss.email && (!a.allowed.length || a.allowed.includes(ss.email))) $("#lock-st").innerHTML = `<p>Ultima conectare: ${esc(ss.email)}, ${new Date(ss.at).toLocaleDateString("ro-RO")}.</p><button class="btn primary" data-act="lock-offline">Continuă offline</button>`;
+  });
+}
+function hideLock() { const el = $("#lock"); el.classList.remove("on"); el.setAttribute("aria-hidden", "true"); el.innerHTML = ""; }
+function handleCredential(resp) {
+  const p = jwtPayload(resp && resp.credential); const a = S.auth;
+  const st = $("#lock-st");
+  if (!p || !p.email) { if (st) st.textContent = "Răspuns invalid de la Google."; return; }
+  if (p.aud !== a.clientId) { if (st) st.textContent = "Client ID diferit de cel configurat."; return; }
+  if (p.exp && p.exp * 1000 < Date.now()) { if (st) st.textContent = "Sesiune Google expirată, încearcă din nou."; return; }
+  if (p.email_verified === false) { if (st) st.textContent = "Adresa de e-mail nu este verificată la Google."; return; }
+  if (lockMode === "lock" && a.allowed && a.allowed.length && !a.allowed.includes(p.email)) { if (st) st.innerHTML = `<span style="color:var(--warn)">Contul ${esc(p.email)} nu are acces la această aplicație.</span>`; return; }
+  try { localStorage.setItem(AK, JSON.stringify({ email: p.email, name: p.name || "", at: Date.now() })); } catch (e) {}
+  if (lockMode === "enable") { a.enabled = true; if (!a.allowed.includes(p.email)) a.allowed.push(p.email); save(); toast("Blocare activată pentru " + p.email); }
+  else toast("Bun venit" + (p.given_name ? ", " + p.given_name : ""));
+  hideLock(); render();
+}
+function authCard() {
+  const a = S.auth || {}; const ss = authSession();
+  return `<div class="card stack"><h2>Blocare cu cont Google</h2>
+    <p class="muted">La deschidere, aplicația cere conectarea cu contul tău Google și refuză alte conturi. Este o încuietoare de acces, nu criptare: datele rămân în memoria telefonului. Sesiunea ține ${a.days || 30} de zile; fără internet, poți continua pe ultima sesiune.</p>
+    <p class="sync-status">${a.enabled ? `<b>Activă</b> · ${ss && ss.email ? "conectat ca " + esc(ss.email) : "neconectat"} · conturi permise: ${esc((a.allowed || []).join(", ") || "primul care se conectează")}` : "Inactivă"}</p>
+    <label class="f">Client ID OAuth (Google Cloud)<input type="text" id="a-cid" value="${esc(a.clientId || "")}" placeholder="xxxxxxxx.apps.googleusercontent.com" autocomplete="off"></label>
+    <div class="row"><label class="f grow">Conturi permise (câte unul pe rând; gol = primul care se conectează)<textarea id="a-allowed" style="min-height:52px">${esc((a.allowed || []).join("\n"))}</textarea></label><label class="f" style="width:110px">Sesiune (zile)<input type="number" id="a-days" min="1" max="365" value="${a.days || 30}"></label></div>
+    <div class="row wrap"><button class="btn" data-act="auth-save">Salvează setările</button>${a.enabled ? `<button class="btn" data-act="auth-lock">Blochează acum</button><button class="btn danger" data-act="auth-disable">Dezactivează blocarea</button>` : `<button class="btn primary" data-act="auth-enable">Activează (conectare Google)</button>`}</div>
+    <details><summary class="tiny" style="cursor:pointer">Cum obții Client ID-ul (o singură dată, ~5 minute)</summary><ol class="steps" style="font-size:13px;margin-top:6px"><li>console.cloud.google.com → creează un proiect (ex. „Peptide Tracker”).</li><li>APIs &amp; Services → OAuth consent screen: tip External, completează numele aplicației și e-mailul, la „Test users” adaugă contul tău Google. Nu e nevoie de publicare.</li><li>APIs &amp; Services → Credentials → Create credentials → OAuth client ID → Application type: Web application.</li><li>Authorized JavaScript origins: <span class="mono">https://dragosnimu.github.io</span>. Fără redirect URI.</li><li>Copiază Client ID-ul (se termină în .apps.googleusercontent.com) și lipește-l mai sus, apoi „Salvează setările” și „Activează”.</li></ol><p class="tiny">Client ID-ul nu este secret; intră în backup, ca al doilea telefon să îl aibă automat. Google afișează conectarea în numele aplicației tale din Cloud Console.</p></details></div>`;
+}
+
 /* ---------- ecran Jurnal ---------- */
 let logFilter = "";
 function renderLog() {
@@ -741,9 +819,9 @@ function renderLog() {
 }
 function suggestSite(rk, ml) {
   const sites = ROUTES[rk || "sc"].sites.filter(x => !(ml > 2 && x.startsWith("deltoid")));
-  const last = S.log.filter(e => (e.route || "sc") === (rk || "sc")).sort((a, b) => (b.date + (b.time || "")).localeCompare(a.date + (a.time || "")))[0];
-  if (!last || !last.site) return sites[0];
-  const i = sites.indexOf(last.site); return i < 0 ? sites[0] : sites[(i + 1) % sites.length];
+  let best = sites[0], bestScore = -Infinity;
+  for (const st of sites) { const i = siteInfo(st); let sc = i.days === null ? 9999 : i.days; if (i.react && i.days < 7) sc = -1; if (sc > bestScore) { bestScore = sc; best = st; } }
+  return best;
 }
 function logSheet(id, k, entry) {
   const s = sub(id);
@@ -878,6 +956,7 @@ function renderSettings() {
     <div class="card stack"><h2>Calendar telefon</h2>
       <p class="muted">Un eveniment cu alarmă pentru fiecare sesiune (dimineața și seara), cu substanțele, doza și unitățile în titlu. Importă fișierul în Google Calendar.</p>
       <button class="btn" data-act="ics">Exportă calendar (.ics)</button></div>
+    ${authCard()}
     <div class="card stack"><h2>Sincronizare și backup automat</h2>
       <p class="muted">Datele se salvează automat în repo-ul tău privat de GitHub, pe ramura <span class="mono">data</span> (neafișată de GitHub Pages), la câteva secunde după fiecare modificare, și se descarcă la deschiderea aplicației pe orice telefon. Ai nevoie de un token GitHub cu drept „Contents: Read and write” doar pe acest repo.</p>
       <div id="sync-status">${syncStatusHTML()}</div>
@@ -918,7 +997,7 @@ function checkDueNow(force) {
     notify(`Administrare ${tl(slot)}`, ds.map(d => `${d.sub.short} ${d.label} = ${fmtU(d.units)}`).join(", "));
   }
   for (const key in S.notified) if (diffDays(key.slice(0, 10), k) > 7) { delete S.notified[key]; changed = true; }
-  if (changed) save();
+  if (changed) save(true);
 }
 /* IndexedDB pentru service worker */
 function idb() { return new Promise((res, rej) => { if (!("indexedDB" in window)) return rej(); const r = indexedDB.open("peptide-tracker", 1); r.onupgradeneeded = () => r.result.createObjectStore("kv"); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
@@ -928,7 +1007,7 @@ async function scheduleUpcoming() {
   let k = todayKey();
   for (let i = 0; i < 14; i++, k = addDays(k, 1)) for (const slot of ["am", "pm"]) {
     const ds = dosesOn(k).filter(d => d.sub.time === slot && !d.skipped);
-    if (!ds.length || ds.every(d => d.logged)) continue;
+    if (!ds.length || ds.every(d => d.logged) || S.notified[k + "|" + slot]) continue;
     const [h, m] = S.settings[slot].split(":").map(Number);
     const dt = fromKey(k); dt.setHours(h, m, 0, 0);
     list.push({ key: k + "|" + slot, ts: dt.getTime(), title: `Administrare ${tl(slot)}`, body: ds.filter(d => !d.logged).map(d => `${d.sub.short} ${d.label} = ${fmtU(d.units)}`).join(", ") });
@@ -975,7 +1054,7 @@ function buildICS() {
 function importJSON(ev) {
   const f = ev.target.files[0]; if (!f) return;
   const r = new FileReader();
-  r.onload = () => { try { const s = JSON.parse(r.result); if (!s || !s.v || !Array.isArray(s.log)) throw 0; if (!confirm(`Import: ${s.log.length} administrări, ${Object.keys(s.vials || {}).length} substanțe cu fiole. Datele curente vor fi înlocuite.`)) return; S = Object.assign(defaultState(), s); save(); toast("Date importate"); render(); } catch (e) { toast("Fișier invalid"); } };
+  r.onload = () => { try { const s = JSON.parse(r.result); if (!s || !s.v || !Array.isArray(s.log)) throw 0; if (!confirm(`Import: ${s.log.length} administrări, ${Object.keys(s.vials || {}).length} substanțe cu fiole. Datele curente vor fi înlocuite.`)) return; const keep = S.sync; S = migrate(s); S.sync = Object.assign({}, S.sync, { token: keep.token, repo: keep.repo, branch: keep.branch, path: keep.path, lastSync: keep.lastSync, lastSha: keep.lastSha, calId: S.sync.calId || keep.calId }); save(); toast("Date importate"); render(); } catch (e) { toast("Fișier invalid"); } };
   r.readAsText(f);
 }
 
@@ -1013,27 +1092,30 @@ const A = {
     if (d.new) {
       const s = sub(d.id), v = activeVial(d.id);
       if (!(dr.units > 0)) return toast("Introdu unitățile administrate");
-      S.log.push({ id: +d.eid, date: d.k, time, sub: d.id, mg: dr.mg, units: dr.units, label: dr.label, site, feel: dr.feel, symptoms: dr.symptoms, comment, vial: v ? v.n : null, planned: dr.planned, route });
-      if (v) v.leftMg = Math.max(0, Math.round((v.leftMg - dr.mg) * 1000) / 1000);
+      const taken = v ? Math.min(dr.mg, v.leftMg) : 0;
+      S.log.push({ id: +d.eid, date: d.k, time, sub: d.id, mg: dr.mg, units: dr.units, label: dr.label, site, feel: dr.feel, symptoms: dr.symptoms, comment, vial: v ? v.n : null, planned: dr.planned, route, taken });
+      if (v) v.leftMg = Math.max(0, Math.round((v.leftMg - taken) * 1000) / 1000);
       const dk = S.days[d.k + "|" + d.id]; if (dk && dk.skip) { delete dk.skip; delete dk.moved; }
       toast(`${s.short} înregistrat: ${fmtU(dr.units)}`);
     } else {
       const e = S.log.find(x => x.id === +d.eid);
       if (!(dr.units > 0)) return toast("Introdu unitățile administrate");
       const s = sub(e.sub), vs = S.vials[e.sub] || [], v = vs.find(x => x.n === e.vial);
-      if (v) v.leftMg = Math.min(s.vialMg, Math.max(0, Math.round((v.leftMg + e.mg - dr.mg) * 1000) / 1000));
-      Object.assign(e, { time, site, feel: dr.feel, symptoms: dr.symptoms, comment, mg: dr.mg, units: dr.units, label: dr.label, route }); toast("Actualizat");
+      let taken = e.taken != null ? e.taken : e.mg;
+      if (v) { const avail = Math.min(s.vialMg, v.leftMg + taken); taken = Math.min(dr.mg, avail); v.leftMg = Math.max(0, Math.round((avail - taken) * 1000) / 1000); }
+      Object.assign(e, { time, site, feel: dr.feel, symptoms: dr.symptoms, comment, mg: dr.mg, units: dr.units, label: dr.label, route, taken }); toast("Actualizat");
     }
     save(); closeSheet(); render();
   },
   "log-delete": d => {
     const i = S.log.findIndex(x => x.id === +d.eid); if (i < 0 || !confirm("Ștergi această înregistrare?")) return;
-    const e = S.log[i]; const vs = S.vials[e.sub] || []; const v = vs.find(x => x.n === e.vial); if (v) v.leftMg = Math.min(sub(e.sub).vialMg, v.leftMg + e.mg);
+    const e = S.log[i]; const vs = S.vials[e.sub] || []; const v = vs.find(x => x.n === e.vial); if (v) v.leftMg = Math.min(sub(e.sub).vialMg, v.leftMg + (e.taken != null ? e.taken : e.mg));
     S.log.splice(i, 1); save(); closeSheet(); render();
   },
   "skip": d => { S.days[d.k + "|" + d.id] = Object.assign(S.days[d.k + "|" + d.id] || {}, { skip: true }); save(); render(); },
   "move": d => {
     const t = addDays(d.k, 1);
+    if (scheduled(sub(d.id), t)) return toast("Mâine există deja o doză; folosește „Sari”.");
     S.days[d.k + "|" + d.id] = Object.assign(S.days[d.k + "|" + d.id] || {}, { skip: true, moved: true });
     S.days[t + "|" + d.id] = Object.assign(S.days[t + "|" + d.id] || {}, { extra: true });
     save(); toast(`${sub(d.id).short} mutat pe ${fmtL(t)}`); render();
@@ -1062,8 +1144,9 @@ const A = {
     const k = todayKey(), s = sub(d.id), dd = scheduled(s, k); if (!dd) return;
     const ack = $("#f-ack"); if (ack && !ack.checked) { toast("Bifează confirmarea de sub avertizări"); ack.scrollIntoView({ block: "center" }); return; }
     const v = activeVial(d.id);
-    S.log.push({ id: Date.now(), date: k, time: nowHM(), sub: d.id, mg: dd.mg, units: dd.units, label: dd.label, site: d.site, feel: 0, symptoms: [], comment: "", vial: v ? v.n : null, planned: { mg: dd.mg, units: dd.units, label: dd.label }, route: s.routeKey || "sc" });
-    if (v) v.leftMg = Math.max(0, Math.round((v.leftMg - dd.mg) * 1000) / 1000);
+    const taken = v ? Math.min(dd.mg, v.leftMg) : 0;
+    S.log.push({ id: Date.now(), date: k, time: nowHM(), sub: d.id, mg: dd.mg, units: dd.units, label: dd.label, site: d.site, feel: 0, symptoms: [], comment: "", vial: v ? v.n : null, planned: { mg: dd.mg, units: dd.units, label: dd.label }, route: s.routeKey || "sc", taken });
+    if (v) v.leftMg = Math.max(0, Math.round((v.leftMg - taken) * 1000) / 1000);
     save(); toast(`${s.short} înregistrat: ${fmtU(dd.units)}, ${d.site}`); focusIdx = 0; render(); window.scrollTo(0, 0);
   },
   "plan-edit": d => planSheet(d.id),
@@ -1100,11 +1183,11 @@ const A = {
       const m = txt.match(/APP_VERSION = "([^"]+)"/); const remote = m ? m[1] : null;
       const r = await navigator.serviceWorker.getRegistration();
       if (r) await r.update();
-      if (remote && remote !== APP_VERSION) { toast("Versiunea " + remote + " e pe server; reîncarc..."); updateReady = true; setTimeout(() => location.reload(), 1800); }
+      if (remote && remote !== APP_VERSION) { toast("Versiunea " + remote + " e pe server; reîncarc..."); updateReady = true; setTimeout(async () => { const r2 = await navigator.serviceWorker.getRegistration(); if (r2 && r2.waiting) { r2.waiting.postMessage("skipWaiting"); setTimeout(() => location.reload(), 2500); } else location.reload(); }, 1200); }
       else toast("Ești la ultima versiune (v" + APP_VERSION + ")");
     } catch (e) { toast("Nu am putut verifica (offline?)"); }
   },
-  "reload": () => location.reload(),
+  "reload": async () => { try { const r = await navigator.serviceWorker.getRegistration(); if (r && r.waiting) { updateReady = true; r.waiting.postMessage("skipWaiting"); setTimeout(() => location.reload(), 2500); return; } } catch (e) {} location.reload(); },
   "force-update": async () => {
     toast("Șterg cache-ul și reîncarc de pe server...");
     try {
@@ -1136,17 +1219,26 @@ const A = {
     let i = 0;
     for (const id of picks) {
       const b = SUBS.find(x => x.id === id), p = S.plan[id] || {}; const vials = +host.querySelector(`[data-cv="${id}"]`).value || 10; const from = addDays(start, i * step);
-      const base = Object.assign({}, b, p.routeKey ? { routeKey: p.routeKey } : {}, (b.routeOptions && p.routeKey === "im") ? b.routeOptions.im : {});
-      const r = simulateEnd(base, from, vials);
-      S.plan[id] = Object.assign({}, p, { from, to: r.to || from, stopped: false, stock: vials });
       for (const key of Object.keys(S.days)) if (key.endsWith("|" + id) && key.slice(0, 10) >= from) delete S.days[key];
+      const r = simulateEnd(Object.assign({}, sub(id), { test: false }), from, vials);
+      S.plan[id] = Object.assign({}, p, { from, to: r.to || from, stopped: false, stock: vials, test: false });
       i++;
     }
     save(); closeSheet(); toast("Ciclul următor este în plan"); render();
   },
-  "cal-publish": async () => { if (!S.sync.calId) { const a = new Uint8Array(16); crypto.getRandomValues(a); S.sync.calId = [...a].map(x => x.toString(16).padStart(2, "0")).join(""); save(true); } toast("Public calendarul..."); await publishCal(true); render(); },
+  "cal-publish": async () => { if (!S.sync.calId) { const a = new Uint8Array(16); crypto.getRandomValues(a); S.sync.calId = [...a].map(x => x.toString(16).padStart(2, "0")).join(""); save(); } toast("Public calendarul..."); await publishCal(true); render(); },
   "cal-copy": async () => { try { await navigator.clipboard.writeText(calUrl()); toast("Adresa copiată"); } catch (e) { prompt("Copiază adresa:", calUrl()); } },
   "cal-off": () => { if (confirm("Oprești publicarea? Fișierul rămâne pe GitHub până îl ștergi din repo; abonamentul nu va mai primi actualizări.")) { S.sync.calId = ""; S.sync.calHash = 0; S.sync.calAt = 0; S.sync.calError = ""; save(true); render(); } },
+  "auth-save": () => {
+    const cid = $("#a-cid").value.trim(), allowed = $("#a-allowed").value.split(/\n/).map(x => x.trim().toLowerCase()).filter(Boolean), days = Math.max(1, Math.min(365, parseInt($("#a-days").value, 10) || 30));
+    if (S.auth.enabled && !cid) return toast("Client ID-ul nu poate fi gol cât timp blocarea e activă");
+    Object.assign(S.auth, { clientId: cid, allowed, days }); save(); toast("Setări salvate"); render();
+  },
+  "auth-enable": () => { const cid = $("#a-cid").value.trim(); if (!cid) return toast("Pune Client ID-ul"); S.auth.clientId = cid; save(true); showLock("enable"); },
+  "auth-disable": () => { if (confirm("Dezactivezi blocarea? Aplicația se va deschide fără conectare.")) { S.auth.enabled = false; save(); try { localStorage.removeItem(AK); } catch (e) {} render(); } },
+  "auth-lock": () => { try { localStorage.removeItem(AK); } catch (e) {} showLock("lock"); },
+  "lock-cancel": () => hideLock(),
+  "lock-offline": () => { const ss = authSession(); if (ss) { ss.at = Date.now(); try { localStorage.setItem(AK, JSON.stringify(ss)); } catch (e) {} } hideLock(); render(); },
   "supplies-edit": () => suppliesSheet(),
   "supplies-save": () => { const st = S.supplies = S.supplies || {}; document.querySelectorAll("#sheet [data-sk]").forEach(i => { const v = parseFloat(i.value); st[i.dataset.sk] = isNaN(v) ? null : v; }); st.updated = todayKey(); save(); closeSheet(); toast("Stoc salvat"); render(); },
   "report-open": () => reportSheet(),
@@ -1166,9 +1258,9 @@ const A = {
   },
   "sync-now": async () => { await pullSync(true); render(); },
   "sync-off": () => { if (confirm("Deconectezi sincronizarea? Datele rămân pe telefon și în GitHub.")) { S.sync.token = ""; S.sync.lastError = ""; save(true); render(); } },
-  "sync-keep-local": async () => { const cur = window.__conflict; closeSheet(); if (!cur) return; try { await ghPut(exportable(), cur.sha); S.sync.lastSync = Date.now(); S.sync.lastError = ""; save(true); toast("Telefonul a fost trimis în cloud"); } catch (e) { toast(e.message); } render(); },
-  "sync-keep-remote": () => { const cur = window.__conflict; closeSheet(); if (cur && cur.data) { adoptRemote(cur.data); toast("Date luate din cloud"); } },
-  "wipe": () => { if (confirm("Ștergi TOATE datele (jurnal, fiole, plan)? Nu se poate anula.") && confirm("Sigur? Exportă mai întâi un backup dacă vrei să le păstrezi.")) { S = defaultState(); save(); render(); } }
+  "sync-keep-local": async () => { const cur = window.__conflict; closeSheet(); if (!cur) return; try { const sha = await ghPut(exportable(), cur.sha); S.sync.lastSha = sha; S.sync.lastSync = Date.now(); S.sync.lastError = ""; save(true); toast("Telefonul a fost trimis în cloud"); } catch (e) { toast(e.message); } render(); },
+  "sync-keep-remote": () => { const cur = window.__conflict; closeSheet(); if (cur && cur.data) { adoptRemote(cur.data, cur.sha); toast("Date luate din cloud"); } },
+  "wipe": () => { if (confirm("Ștergi TOATE datele (jurnal, fiole, plan)? Nu se poate anula.") && confirm("Sigur? Exportă mai întâi un backup dacă vrei să le păstrezi.")) { S = defaultState(); save(true); render(); } }
 };
 document.addEventListener("click", e => {
   const el = e.target.closest("[data-act]"); if (!el) return;
@@ -1180,6 +1272,7 @@ $("#nav").addEventListener("click", e => { const b = e.target.closest("button[da
 function render() {
   document.querySelectorAll("#nav button").forEach(b => b.classList.toggle("on", b.dataset.v === view || (view === "focus" && b.dataset.v === "today")));
   $("#topaction").innerHTML = "";
+  if (pendingConflict && !$("#sheet").innerHTML) { const c = pendingConflict; pendingConflict = null; setTimeout(() => conflictSheet(c), 50); }
   ({ today: renderToday, cal: renderCal, vials: renderVials, log: renderLog, settings: renderSettings, focus: renderFocus })[view]();
   const pending = dosesOn(todayKey()).filter(d => !d.logged && !d.skipped).length;
   const nb = $("#nav button[data-v=today]"); let badge = nb.querySelector(".badge");
@@ -1206,9 +1299,10 @@ if ("serviceWorker" in navigator) {
 }
 if (new URLSearchParams(location.search).get("mode") === "inject") view = "focus";
 render();
+if (!authValid()) showLock("lock");
 checkDueNow(); scheduleUpcoming();
 pullSync(false);
 window.addEventListener("online", () => pullSync(false));
 setInterval(checkDueNow, 60 * 1000);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) { checkDueNow(); render(); pullSync(false); } });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { checkDueNow(); render(); pullSync(false); if (!authValid() && !$("#lock").classList.contains("on")) showLock("lock"); } });
 })();
