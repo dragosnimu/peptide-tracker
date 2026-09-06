@@ -24,7 +24,7 @@ const nowHM = () => { const d = new Date(); return pad(d.getHours()) + ":" + pad
 
 /* ---------- stare ---------- */
 const SK = "peptide-tracker-v1";
-const defaultState = () => ({ v: 1, settings: { am: "06:45", pm: "21:00", notif: false }, plan: {}, days: {}, vials: {}, log: [], notified: {}, labs: [], supplies: { s03: null, s1: null, s3: null, waterMl: null, swabs: null, updated: null }, sync: { token: "", repo: "dragosnimu/peptide-tracker", branch: "data", path: "peptide-backup.json", lastSync: 0, lastError: "" }, meta: { updatedAt: 0 } });
+const defaultState = () => ({ v: 1, settings: { am: "06:45", pm: "21:00", notif: false }, plan: {}, days: {}, vials: {}, log: [], notified: {}, labs: [], supplies: { s03: null, s1: null, s3: null, waterMl: null, swabs: null, updated: null }, sync: { token: "", repo: "dragosnimu/peptide-tracker", branch: "data", path: "peptide-backup.json", lastSync: 0, lastError: "", calId: "", calHash: 0, calAt: 0, calError: "" }, meta: { updatedAt: 0 }, orders: [] });
 let S = load();
 function load() { try { const s = JSON.parse(localStorage.getItem(SK)); if (s && s.v) return Object.assign(defaultState(), s); } catch (e) {} return defaultState(); }
 let saveTimer = null;
@@ -32,7 +32,7 @@ function save(noTouch) {
   if (!noTouch) S.meta.updatedAt = Date.now();
   try { localStorage.setItem(SK, JSON.stringify(S)); } catch (e) { toast("Nu am putut salva datele"); }
   clearTimeout(saveTimer); saveTimer = setTimeout(scheduleUpcoming, 300);
-  if (!noTouch) schedulePush();
+  if (!noTouch) { schedulePush(); scheduleCalPublish(); }
 }
 
 /* ---------- plan ---------- */
@@ -196,7 +196,7 @@ function renderCal() {
     ${ds.length ? slotBlock(ds, selDay) : `<p class="muted">Nicio administrare în această zi.</p>`}
   </div>`;
   h += `<div class="card"><h2>Ansamblu pe ${planWeeks()} săptămâni</h2><p class="tiny" style="margin-bottom:8px">O coloană = o săptămână. Bară plină = zilnic, estompată = 2-3x/săpt., contur punctat = pauză de washout între cicluri. Numărul de lângă substanță = doze planificate până la epuizarea stocului.</p>${gantt()}</div>`;
-  h += `<div class="card"><h2>Editează planul</h2><div class="stack">${allSubs().map(s => `<div class="row between"><div class="grow"><b>${esc(s.short)}</b> <span class="tiny">${s.stopped ? "oprit" : fmt(s.from) + " – " + fmt(s.to) + " " + fromKey(s.to).getFullYear() + " · " + doseCount(s) + " doze · " + tl(s.time) + " · " + doseLabel(s, s.doseMg) + " = " + fmtU(unitsFor(s, s.doseMg, activeVial(s.id)))}</span>${hasIM(s) ? ` <span class="chip ${s.routeKey === "im" ? "acc" : ""}">${esc(s.route)}</span>` : ""}${S.plan[s.id] ? ' <span class="chip acc">modificat</span>' : ""}</div><button class="btn small" data-act="plan-edit" data-id="${s.id}">Editează</button></div>`).join("")}</div></div>`;
+  h += `<div class="card"><div class="row between"><h2 style="margin:0">Editează planul</h2><button class="btn small" data-act="cycle-open">Planifică ciclul următor</button></div><div class="stack" style="margin-top:8px">${allSubs().map(s => `<div class="row between"><div class="grow"><b>${esc(s.short)}</b> <span class="tiny">${s.stopped ? "oprit" : fmt(s.from) + " – " + fmt(s.to) + " " + fromKey(s.to).getFullYear() + " · " + doseCount(s) + " doze · " + tl(s.time) + " · " + doseLabel(s, s.doseMg) + " = " + fmtU(unitsFor(s, s.doseMg, activeVial(s.id)))}</span>${hasIM(s) ? ` <span class="chip ${s.routeKey === "im" ? "acc" : ""}">${esc(s.route)}</span>` : ""}${S.plan[s.id] ? ' <span class="chip acc">modificat</span>' : ""}</div><button class="btn small" data-act="plan-edit" data-id="${s.id}">Editează</button></div>`).join("")}</div></div>`;
   main.innerHTML = `<div class="view">${h}</div>`;
 }
 function gantt() {
@@ -224,7 +224,7 @@ function renderVials() {
   const list = allSubs().slice().sort((a, b) => a.from.localeCompare(b.from));
   let h = "";
   for (const s of list) {
-    const vs = S.vials[s.id] || [], v = activeVial(s.id), used = vs.length, left = s.stock - used;
+    const vs = S.vials[s.id] || [], v = activeVial(s.id), used = vs.filter(x => x.opened >= s.from).length, left = s.stock - used;
     const active = scheduled(s, k) || (s.from <= addDays(k, 7) && s.to >= k && !s.stopped);
     let body;
     if (v) {
@@ -240,23 +240,25 @@ function renderVials() {
     }
     h += `<div class="vial"><div class="row between"><span class="name">${esc(s.name)}</span><span class="chip ${left <= 0 ? "warn" : ""}">${used} / ${s.stock} folosite</span></div>
       <div class="tiny">${esc(s.cycle)} · ${esc(s.stab)}</div>${body}
-      ${vs.length > 1 ? `<details><summary class="tiny">Istoric fiole (${vs.length})</summary><div class="tiny">${vs.map(x => `#${x.n}: ${fmtL(x.opened)}${x.discarded ? ", aruncată" : ""}, ${num(x.leftMg)} mg rămase`).join("<br>")}</div></details>` : ""}
+      ${vs.length > 1 ? `<details><summary class="tiny">Istoric fiole (${vs.length})</summary><div class="tiny">${vs.map(x => `#${x.n}: ${fmtL(x.opened)}${x.lot ? ", lot " + esc(x.lot) : ""}${x.discarded ? ", aruncată" : ""}, ${num(x.leftMg)} mg rămase`).join("<br>")}</div></details>` : ""}
     </div>`;
   }
-  main.innerHTML = `<div class="view">${suppliesCard()}${h}</div>`;
+  main.innerHTML = `<div class="view">${suppliesCard()}${ordersCard()}${h}</div>`;
 }
 function vialSheet(id) {
   const s = sub(id), v = activeVial(id);
-  const vs = S.vials[id] || [], n = vs.length + 1;
+  const vs = S.vials[id] || [], n = vs.length + 1, usedNow = vs.filter(x => x.opened >= s.from).length;
+  const ords = (S.orders || []).filter(o => (o.items || []).some(it => it.sub === id && it.vials > 0)).sort((a, b) => b.date.localeCompare(a.date));
   const stepsHtml = `<ol class="steps">${s.steps.map(x => `<li>${esc(x)}</li>`).join("")}</ol>`;
   const html = `<h2>${s.ready ? "Deschide flacon" : "Prepară fiola"} #${n}: ${esc(s.name)}</h2>
     <p class="muted">${esc(s.what)}</p>
     ${v ? `<div class="alert"><b>Fiola #${v.n} este încă activă</b> (${num(v.leftMg)} mg rămase). Va fi marcată ca aruncată.</div>` : ""}
-    ${vs.length >= s.stock ? `<div class="alert"><b>Stocul de ${s.stock} fiole este consumat</b>Continuă doar dacă ai o comandă nouă.</div>` : ""}
+    ${usedNow >= s.stock ? `<div class="alert"><b>Stocul de ${s.stock} fiole pentru ciclul acesta este consumat</b>Continuă doar dacă ai o comandă nouă (adaug-o în Fiole → Comenzi și loturi).</div>` : ""}
     ${stepsHtml}
     <div class="stack">
       <label class="f">Data ${s.ready ? "deschiderii" : "reconstituirii"}<input type="date" id="v-date" value="${todayKey()}"></label>
       ${s.ready ? "" : `<label class="f">Apă bacteriostatică adăugată (ml)<input type="number" id="v-water" step="0.5" min="0.5" value="${s.waterMl}"></label>`}
+      <label class="f">Din comanda / lotul<select id="v-order">${ords.map((o, i) => { const it = o.items.find(x => x.sub === id); return `<option value="${o.id}" ${i === 0 ? "selected" : ""}>${esc(o.supplier)} · ${fmtL(o.date)} ${fromKey(o.date).getFullYear()}${it.lot ? " · lot " + esc(it.lot) : ""}</option>`; }).join("")}<option value="" ${ords.length ? "" : "selected"}>fără comandă înregistrată</option></select></label>
       <div class="alert info" id="v-calc"></div>
     </div>
     ${s.flag ? `<div class="alert"><b>De reținut</b>${esc(s.flag)}</div>` : ""}
@@ -522,7 +524,7 @@ function reportHTML(from, to, name, withComments) {
   ${logs.map(e => { const sb = sub(e.sub); const dev = e.planned && Math.abs(e.units - e.planned.units) > 0.01 ? ` <span class="small">(planificat ${fmtU(e.planned.units)})</span>` : ""; return `<tr><td>${fmtL(e.date)} ${fromKey(e.date).getFullYear()}</td><td>${esc(e.time || "")}</td><td>${esc(sb.short)}</td><td>${esc(e.label)} = ${fmtU(e.units)}${dev}</td><td>${(e.route || "sc").toUpperCase()} · ${esc(e.site || "")}</td><td>${e.feel || "–"}</td><td>${esc((e.symptoms || []).join(", "))}</td>${withComments ? `<td>${esc(e.comment || "")}</td>` : ""}</tr>`; }).join("")}
   </tbody></table>` : "<p>Nicio administrare în perioadă.</p>"}
   <h2>Fiole preparate</h2>
-  ${vialsIn.length ? `<table><thead><tr><th>Data</th><th>Substanța</th><th>Fiola</th><th>Reconstituire</th><th>Concentrație</th><th>Stare</th></tr></thead><tbody>${vialsIn.map(({ sb, v }) => `<tr><td>${fmtL(v.opened)} ${fromKey(v.opened).getFullYear()}</td><td>${esc(sb.name)}</td><td>#${v.n} · ${sb.vialMg} mg</td><td>${sb.ready ? "gata de uz" : num(v.waterMl) + " ml apă bacteriostatică"}</td><td>${num(conc(sb, v))} mg/ml</td><td>${v.discarded ? "aruncată" : num(v.leftMg) + " mg rămase"}</td></tr>`).join("")}</tbody></table>` : "<p>Nicio fiolă preparată în perioadă.</p>"}
+  ${vialsIn.length ? `<table><thead><tr><th>Data</th><th>Substanța</th><th>Fiola</th><th>Lot / comandă</th><th>Reconstituire</th><th>Concentrație</th><th>Stare</th></tr></thead><tbody>${vialsIn.map(({ sb, v }) => { const o = (S.orders || []).find(x => x.id === v.orderId); return `<tr><td>${fmtL(v.opened)} ${fromKey(v.opened).getFullYear()}</td><td>${esc(sb.name)}</td><td>#${v.n} · ${sb.vialMg} mg</td><td>${v.lot ? "lot " + esc(v.lot) : ""}${o ? (v.lot ? " · " : "") + esc(o.supplier) + " " + fmt(o.date) : ""}</td><td>${sb.ready ? "gata de uz" : num(v.waterMl) + " ml apă bacteriostatică"}</td><td>${num(conc(sb, v))} mg/ml</td><td>${v.discarded ? "aruncată" : num(v.leftMg) + " mg rămase"}</td></tr>`; }).join("")}</tbody></table>` : "<p>Nicio fiolă preparată în perioadă.</p>"}
   <h2>Analize de sânge</h2>
   ${labsIn.length ? `<table><thead><tr><th>Analiză</th>${labsIn.map(l => `<th>${fmtL(l.date)} ${fromKey(l.date).getFullYear()}</th>`).join("")}<th>Interval orientativ</th></tr></thead><tbody>${LAB_FIELDS.filter(f => labsIn.some(l => l.v[f.k] != null)).map(f => `<tr><td>${esc(f.n)} (${esc(f.u)})</td>${labsIn.map(l => `<td>${l.v[f.k] != null ? num(l.v[f.k]) : ""}</td>`).join("")}<td>${num(f.lo)}–${f.hi > 900 ? "" : num(f.hi)}</td></tr>`).join("")}</tbody></table>${labsIn.some(l => l.note) ? `<p class="small">${labsIn.filter(l => l.note).map(l => fmtL(l.date) + ": " + esc(l.note)).join("<br>")}</p>` : ""}` : "<p>Nicio analiză înregistrată în perioadă.</p>"}
   <h2>Surse și note</h2>
@@ -552,7 +554,7 @@ async function ghPut(obj, sha) {
   if (!r.ok) throw new Error("GitHub " + r.status + (r.status === 401 ? ": token invalid" : r.status === 403 ? ": token fără drept de scriere" : r.status === 409 ? ": conflict, reîncearcă" : r.status === 404 ? ": repo sau ramură inexistentă" : ""));
   return (await r.json()).content.sha;
 }
-function schedulePush() { if (!ghCfg().token) return; clearTimeout(pushTimer); pushTimer = setTimeout(() => pushSync(false), 4000); }
+function schedulePush() { if (!ghCfg().token || /40[13]/.test(ghCfg().lastError || "")) return; clearTimeout(pushTimer); pushTimer = setTimeout(() => pushSync(false), 4000); }
 async function pushSync(manual) {
   if (!ghCfg().token || syncBusy || !navigator.onLine) return;
   syncBusy = true;
@@ -567,7 +569,7 @@ async function pushSync(manual) {
   syncBusy = false;
 }
 async function pullSync(manual) {
-  if (!ghCfg().token || syncBusy || !navigator.onLine) return;
+  if (!ghCfg().token || syncBusy || !navigator.onLine || (!manual && /40[13]/.test(ghCfg().lastError || ""))) return;
   syncBusy = true;
   try {
     const cur = await ghGet();
@@ -606,6 +608,111 @@ function syncStatusHTML() {
   if (!c.token) return `<span class="sync-status">Neconfigurat. Datele stau doar pe acest telefon.</span>`;
   const dirty = S.meta.updatedAt > (c.lastSync || 0);
   return `<span class="sync-status">${c.lastError ? `<b class="err">Eroare: ${esc(c.lastError)}</b>` : dirty ? `<b style="color:var(--am)">Modificări nesincronizate</b>` : `<b>Sincronizat</b>`}${c.lastSync ? ` · ultima sincronizare ${new Date(c.lastSync).toLocaleString("ro-RO")}` : ""} · ${esc(c.repo)} @ ${esc(c.branch)}/${esc(c.path)}</span>`;
+}
+
+/* ---------- comenzi si loturi ---------- */
+function ordersCard() {
+  const os = (S.orders || []).slice().sort((a, b) => b.date.localeCompare(a.date));
+  return `<div class="card orders stack"><div class="row between"><h2 style="margin:0">Comenzi și loturi</h2><button class="btn small primary" data-act="order-new">Adaugă comandă</button></div>
+    <p class="tiny">Fiecare fiolă preparată se leagă de comanda și lotul din care provine, ca să știi de unde vine o reacție. Certificatele de analiză le păstrezi ca linkuri sau nume de fișier.</p>
+    ${os.length ? os.map(o => `<div class="o"><div class="row between"><b>${esc(o.supplier)}</b><span class="tiny">${fmtL(o.date)} ${fromKey(o.date).getFullYear()}</span></div>
+      <div>${(o.items || []).filter(it => it.vials > 0).map(it => { const sb = SUBS.find(x => x.id === it.sub); const used = (S.vials[it.sub] || []).filter(v => v.orderId === o.id).length; return `${esc(sb ? sb.short : it.sub)} ×${it.vials}${it.lot ? " (lot " + esc(it.lot) + ")" : ""}${used ? ` <span class="tiny">${used} deschise</span>` : ""}`; }).join(" · ")}</div>
+      ${o.certs ? `<div class="tiny">Certificate: ${esc(o.certs).replace(/\n/g, " · ")}</div>` : ""}${o.notes ? `<div class="tiny">${esc(o.notes)}</div>` : ""}
+      <div class="row"><button class="btn small" data-act="order-edit" data-oid="${o.id}">Editează</button></div></div>`).join("") : `<p class="muted">Nicio comandă înregistrată. Prima este comanda MKM din august 2026: adaug-o cu „Adaugă comandă”, cu loturile de pe fiole.</p>`}</div>`;
+}
+function orderSheet(entry) {
+  const o = entry || { id: Date.now(), supplier: "MKM", date: "2026-08-19", items: SUBS.map(sb => ({ sub: sb.id, vials: 10, lot: "" })), certs: "", notes: "" };
+  const itemOf = id => (o.items || []).find(x => x.sub === id) || { vials: 0, lot: "" };
+  openSheet(`<h2>${entry ? "Comanda " + esc(o.supplier) : "Comandă nouă"}</h2>
+    <div class="stack">
+      <div class="row"><label class="f grow">Furnizor<input type="text" id="o-sup" value="${esc(o.supplier)}"></label><label class="f" style="width:150px">Data<input type="date" id="o-date" value="${o.date}"></label></div>
+      <div class="itemgrid"><span class="hd">Substanța</span><span class="hd">Fiole</span><span class="hd">Lot (de pe fiolă)</span>
+      ${SUBS.map(sb => { const it = itemOf(sb.id); return `<span>${esc(sb.short)}</span><input type="number" min="0" step="1" inputmode="numeric" data-ov="${sb.id}" value="${it.vials || ""}"><input type="text" data-ol="${sb.id}" value="${esc(it.lot || "")}" placeholder="ex. ET10-2607">`; }).join("")}</div>
+      <label class="f">Certificate de analiză (un rând fiecare: link sau nume de fișier)<textarea id="o-certs" placeholder="ex. SS-31 10mg purity.pdf (folder mkm)&#10;https://...">${esc(o.certs || "")}</textarea></label>
+      <label class="f">Note (AWB, preț, observații la primire)<textarea id="o-notes">${esc(o.notes || "")}</textarea></label>
+    </div>
+    <div class="row"><button class="btn primary grow" data-act="order-save" data-oid="${o.id}" data-new="${entry ? "" : "1"}">Salvează</button>${entry ? `<button class="btn danger" data-act="order-delete" data-oid="${o.id}">Șterge</button>` : ""}<button class="btn" data-act="close">Anulează</button></div>`);
+}
+
+/* ---------- planificator ciclul urmator ---------- */
+function simulateEnd(base, from, vials) {
+  const eff = Object.assign({}, base, { from, to: "2099-12-31", stopped: false });
+  let v = null, n = 0, last = null, doses = 0;
+  for (let k = from, i = 0; i < 1500; i++, k = addDays(k, 1)) {
+    const dd = scheduled(eff, k); if (!dd) continue;
+    if (!v || diffDays(v.opened, k) > eff.stabilityDays || v.left + 1e-9 < dd.mg) { if (n >= vials) break; v = { opened: k, left: eff.vialMg }; n++; }
+    v.left -= dd.mg; doses++; last = k;
+  }
+  return { to: last, doses, vials: n };
+}
+function cycleSheet() {
+  const k = todayKey();
+  const rows = allSubs().map(s => {
+    const done = s.to < k || s.stopped;
+    const used = (S.vials[s.id] || []).filter(x => x.opened >= s.from).length;
+    return `<div class="row" style="gap:8px"><label class="check grow" style="padding:4px 0"><input type="checkbox" data-cs="${s.id}" ${done ? "checked" : ""}> <b>${esc(s.short)}</b> <span class="tiny">${s.stopped ? "oprit" : "până pe " + fmt(s.to) + " " + fromKey(s.to).getFullYear()} · ${used}/${s.stock} fiole folosite</span></label><input type="number" class="mono" data-cv="${s.id}" min="1" step="1" value="10" style="width:64px;border:1px solid var(--line);border-radius:6px;padding:6px;background:var(--surface);color:var(--ink)" title="fiole"></div>`;
+  }).join("");
+  openSheet(`<h2>Planifică ciclul următor</h2>
+    <p class="muted">Bifează substanțele, pune câte fiole ai pentru fiecare și data de start. Aplicația calculează sfârșitul cu aceleași reguli: cicluri, pauze, fiole care expiră. Substanțele terminate sunt bifate implicit.</p>
+    <div class="stack">
+      <div class="row"><label class="f grow">Data de start<input type="date" id="c-start" value="${addDays(k, 14)}"></label><label class="f grow">Introducere<select id="c-intro"><option value="0">toate în ziua de start</option><option value="7" selected>câte una pe săptămână, în ordinea listei</option><option value="14">câte una la două săptămâni</option></select></label></div>
+      <p class="tiny">Raportul recomandă o pauză de washout înainte de un ciclu nou și analize de control; startul propus este peste 14 zile.</p>
+      <div class="stack" style="gap:2px">${rows}</div>
+      <div class="alert info" id="c-preview">Bifează substanțele ca să vezi calendarul rezultat.</div>
+    </div>
+    <div class="row"><button class="btn primary grow" data-act="cycle-apply">Aplică în plan</button><button class="btn" data-act="close">Anulează</button></div>`, host => {
+    const preview = () => {
+      const start = host.querySelector("#c-start").value, step = +host.querySelector("#c-intro").value;
+      if (!start) return;
+      const picks = [...host.querySelectorAll("[data-cs]:checked")].map(i => i.dataset.cs);
+      if (!picks.length) { host.querySelector("#c-preview").textContent = "Nimic bifat."; return; }
+      let i = 0, out = [];
+      for (const id of picks) { const b = SUBS.find(x => x.id === id); const vials = +host.querySelector(`[data-cv="${id}"]`).value || 10; const from = addDays(start, i * step); const r = simulateEnd(Object.assign({}, b, S.plan[id] && S.plan[id].routeKey ? { routeKey: S.plan[id].routeKey } : {}, (b.routeOptions && S.plan[id] && S.plan[id].routeKey === "im") ? b.routeOptions.im : {}), from, vials); out.push(`<b>${esc(b.short)}</b>: ${fmtL(from)} → ${r.to ? fmtL(r.to) + " " + fromKey(r.to).getFullYear() : "?"} · ${r.doses} doze · ${r.vials} fiole`); i++; }
+      host.querySelector("#c-preview").innerHTML = out.join("<br>");
+    };
+    host.querySelectorAll("[data-cs],[data-cv],#c-start,#c-intro").forEach(el => el.addEventListener("change", preview));
+    host.querySelectorAll("[data-cv]").forEach(el => el.addEventListener("input", preview));
+    preview();
+  });
+}
+
+/* ---------- calendar abonat (ICS publicat pe GitHub Pages) ---------- */
+let calTimer = null;
+function icsHash(str) { let h = 0; const t = str.replace(/DTSTAMP:[^\r\n]*/g, ""); for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; return h; }
+function calUrl() { const c = ghCfg(); if (!c.calId) return ""; const [u, r] = c.repo.split("/"); return `https://${u}.github.io/${r}/cal/${c.calId}.ics`; }
+function scheduleCalPublish() { if (!ghCfg().token || !ghCfg().calId || /40[13]/.test((ghCfg().lastError || "") + (ghCfg().calError || ""))) return; clearTimeout(calTimer); calTimer = setTimeout(() => publishCal(false), 15000); }
+async function publishCal(manual) {
+  const c = ghCfg(); if (!c.token || !c.calId || !navigator.onLine) return;
+  const ics = buildICS(), hs = icsHash(ics);
+  if (!manual && hs === c.calHash) return;
+  const path = `cal/${c.calId}.ics`;
+  try {
+    const cur = await ghGetPath(path, "main");
+    await ghPutPath(path, "main", ics, cur && cur.sha, "Calendar Peptide Tracker " + new Date().toISOString());
+    c.calHash = hs; c.calAt = Date.now(); c.calError = ""; save(true);
+    if (manual) toast("Calendar publicat; GitHub Pages îl servește în 1-2 minute");
+  } catch (e) { c.calError = e.message; save(true); if (manual) toast(e.message); }
+  const el = $("#cal-status"); if (el) el.innerHTML = calStatusHTML();
+}
+function calStatusHTML() {
+  const c = ghCfg();
+  if (!c.token) return `<span class="sync-status"><b class="err">Configurează întâi tokenul GitHub</b> din cardul de sincronizare.</span>`;
+  if (!c.calId) return `<span class="sync-status">Nepublicat încă.</span>`;
+  return `<span class="sync-status">${c.calError ? `<b class="err">Eroare: ${esc(c.calError)}</b>` : `<b>Publicat</b>`}${c.calAt ? ` · ultima publicare ${new Date(c.calAt).toLocaleString("ro-RO")}` : ""}</span><div class="url" style="margin-top:6px">${esc(calUrl())}</div>`;
+}
+async function ghGetPath(path, branch) {
+  const c = ghCfg();
+  const r = await fetch(`https://api.github.com/repos/${c.repo}/contents/${path}?ref=${encodeURIComponent(branch)}&t=${Date.now()}`, { headers: ghHeaders(), cache: "no-store" });
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error("GitHub " + r.status);
+  const j = await r.json(); return { sha: j.sha };
+}
+async function ghPutPath(path, branch, content, sha, message) {
+  const c = ghCfg();
+  const body = { message, content: b64enc(content), branch }; if (sha) body.sha = sha;
+  const r = await fetch(`https://api.github.com/repos/${c.repo}/contents/${path}`, { method: "PUT", headers: Object.assign({ "Content-Type": "application/json" }, ghHeaders()), body: JSON.stringify(body) });
+  if (!r.ok) throw new Error("GitHub " + r.status + (r.status === 401 ? ": token invalid" : r.status === 403 ? ": token fără drept de scriere" : r.status === 409 ? ": conflict, reîncearcă" : ""));
+  return (await r.json()).content.sha;
 }
 
 /* ---------- ecran Jurnal ---------- */
@@ -647,7 +754,7 @@ function logSheet(id, k, entry) {
   const cc = conc(s, vialOf);
   const planned = e.planned || { mg: e.mg, units: e.units, label: e.label };
   const html = `<h2>${entry ? "Administrare" : "Administrat"}: ${esc(s.short)}</h2>
-    <p class="muted">${esc(s.route)} · ${esc(fmtL(e.date))} · recomandat: <b>${esc(planned.label)} = ${fmtU(planned.units)}</b></p>
+    <p class="muted">${esc(s.route)} · ${esc(fmtL(e.date))} · recomandat: <b>${esc(planned.label)} = ${fmtU(planned.units)}</b>${vialOf ? ` · fiola #${vialOf.n}${vialOf.lot ? ", lot " + esc(vialOf.lot) : ""}` : ""}</p>
     <label class="f">Unități administrate (seringă U-100)<input type="number" id="l-units" inputmode="decimal" step="0.5" min="0" value="${String(Math.round(e.units * 100) / 100)}"></label>
     <div class="alert info" id="l-calc"></div>
     ${!entry && d && !d.vial ? `<div class="alert"><b>Nu ai o fiolă activă pentru ${esc(s.short)}</b>Poți salva oricum, dar stocul din fiolă nu va fi scăzut.</div>` : ""}
@@ -763,6 +870,11 @@ function renderSettings() {
       <p class="muted">Stare: <b>${perm === "granted" ? "permise" : perm === "denied" ? "blocate din setările telefonului" : perm === "unsupported" ? "browserul nu le suportă" : "neactivate"}</b>. Notificările din aplicație apar când aplicația e deschisă sau când Android o trezește în fundal (Chrome, aplicație instalată). Pentru alarme garantate, importă calendarul .ics în Google Calendar.</p>
       <div class="row wrap"><button class="btn primary" data-act="notif-enable" ${perm === "granted" ? "disabled" : ""}>Activează notificările</button><button class="btn" data-act="notif-test" ${perm !== "granted" ? "disabled" : ""}>Notificare de test</button><button class="btn" data-act="notif-now" ${perm !== "granted" ? "disabled" : ""}>Trimite reminderul de azi</button></div>
       <p class="tiny" id="s-sync"></p></div>
+    <div class="card stack"><h2>Calendar abonat (actualizat automat)</h2>
+      <p class="muted">Aplicația publică un fișier de calendar cu nume aleator pe GitHub Pages și îl republică singură la 15 secunde după orice schimbare de plan. Te abonezi o singură dată în Google Calendar, iar reminderele urmează planul fără import manual.</p>
+      <div id="cal-status">${calStatusHTML()}</div>
+      <div class="row wrap"><button class="btn primary" data-act="cal-publish" ${S.sync.token ? "" : "disabled"}>${S.sync.calId ? "Republică acum" : "Publică calendarul"}</button><button class="btn" data-act="cal-copy" ${S.sync.calId ? "" : "disabled"}>Copiază adresa</button><button class="btn" data-act="cal-off" ${S.sync.calId ? "" : "disabled"}>Oprește publicarea</button></div>
+      <details><summary class="tiny" style="cursor:pointer">Cum te abonezi în Google Calendar</summary><ol class="steps" style="font-size:13px;margin-top:6px"><li>Pe calculator, deschide calendar.google.com.</li><li>În stânga, lângă „Alte calendare”, apasă + → „Din URL”.</li><li>Lipește adresa de mai sus și apasă „Adaugă calendarul”.</li><li>În setările acelui calendar, la „Notificări pentru evenimente”, pune o notificare „la ora evenimentului” (Google ignoră alarmele din fișier la calendarele abonate).</li><li>Pe telefon, în aplicația Google Calendar, activează calendarul „Peptide” din meniul de calendare.</li></ol><p class="tiny">Google reîmprospătează calendarele abonate la câteva ore, uneori până la o zi. Adresa este publică pentru cine o știe, dar numele aleator o face practic imposibil de ghicit; conține doar programul de administrare, nu jurnalul.</p></details></div>
     <div class="card stack"><h2>Calendar telefon</h2>
       <p class="muted">Un eveniment cu alarmă pentru fiecare sesiune (dimineața și seara), cu substanțele, doza și unitățile în titlu. Importă fișierul în Google Calendar.</p>
       <button class="btn" data-act="ics">Exportă calendar (.ics)</button></div>
@@ -880,7 +992,9 @@ const A = {
     const wi = host.querySelector("#v-water"); const waterMl = s.ready ? s.vialMl : (parseFloat(wi.value) || s.waterMl);
     const vs = S.vials[d.id] = S.vials[d.id] || [];
     vs.forEach(v => { if (!v.discarded) v.discarded = true; });
-    vs.push({ n: vs.length + 1, opened, waterMl, leftMg: s.vialMg, discarded: false });
+    const oid = host.querySelector("#v-order") ? host.querySelector("#v-order").value : "";
+    const ord = (S.orders || []).find(o => String(o.id) === oid); const oit = ord && ord.items.find(x => x.sub === d.id);
+    vs.push({ n: vs.length + 1, opened, waterMl, leftMg: s.vialMg, discarded: false, orderId: ord ? ord.id : null, lot: oit && oit.lot ? oit.lot : "" });
     save(); closeSheet(); toast(`Fiola #${vs.length} ${s.ready ? "deschisă" : "reconstituită"}: ${fmtU(unitsFor(s, s.doseMg, vs[vs.length - 1]))} per doză`); render();
   },
   "vial-discard": d => { const v = activeVial(d.id); if (v && confirm(`Arunci fiola #${v.n} de ${sub(d.id).short}?`)) { v.discarded = true; save(); render(); } },
@@ -1003,6 +1117,36 @@ const A = {
   "notif-test": () => notify("Peptide Tracker", "Notificările funcționează. Așa vei fi anunțat la " + S.settings.am + " și " + S.settings.pm + "."),
   "ics": () => download("peptide-plan.ics", buildICS(), "text/calendar"),
   "export": () => download(`peptide-backup-${todayKey()}.json`, JSON.stringify(exportable(), null, 1), "application/json"),
+  "order-new": () => orderSheet(null),
+  "order-edit": d => { const o = (S.orders || []).find(x => x.id === +d.oid); if (o) orderSheet(o); },
+  "order-save": d => {
+    const host = $("#sheet"); const supplier = host.querySelector("#o-sup").value.trim() || "Furnizor", date = host.querySelector("#o-date").value; if (!date) return toast("Pune data comenzii");
+    const items = SUBS.map(sb => ({ sub: sb.id, vials: parseInt(host.querySelector(`[data-ov="${sb.id}"]`).value, 10) || 0, lot: host.querySelector(`[data-ol="${sb.id}"]`).value.trim() }));
+    const certs = host.querySelector("#o-certs").value.trim(), notes = host.querySelector("#o-notes").value.trim();
+    S.orders = S.orders || [];
+    if (d.new) S.orders.push({ id: +d.oid, supplier, date, items, certs, notes }); else Object.assign(S.orders.find(x => x.id === +d.oid), { supplier, date, items, certs, notes });
+    save(); closeSheet(); toast("Comandă salvată"); render();
+  },
+  "order-delete": d => { const i = (S.orders || []).findIndex(x => x.id === +d.oid); if (i >= 0 && confirm("Ștergi această comandă? Fiolele deja legate de ea rămân, dar fără referință.")) { S.orders.splice(i, 1); save(); closeSheet(); render(); } },
+  "cycle-open": () => cycleSheet(),
+  "cycle-apply": () => {
+    const host = $("#sheet"); const start = host.querySelector("#c-start").value, step = +host.querySelector("#c-intro").value; if (!start) return toast("Pune data de start");
+    const picks = [...host.querySelectorAll("[data-cs]:checked")].map(i => i.dataset.cs); if (!picks.length) return toast("Bifează cel puțin o substanță");
+    if (!confirm(`Aplic ciclul nou pentru ${picks.length} substanțe de la ${fmtL(start)}? Datele de început și sfârșit din plan se rescriu; jurnalul și fiolele rămân.`)) return;
+    let i = 0;
+    for (const id of picks) {
+      const b = SUBS.find(x => x.id === id), p = S.plan[id] || {}; const vials = +host.querySelector(`[data-cv="${id}"]`).value || 10; const from = addDays(start, i * step);
+      const base = Object.assign({}, b, p.routeKey ? { routeKey: p.routeKey } : {}, (b.routeOptions && p.routeKey === "im") ? b.routeOptions.im : {});
+      const r = simulateEnd(base, from, vials);
+      S.plan[id] = Object.assign({}, p, { from, to: r.to || from, stopped: false, stock: vials });
+      for (const key of Object.keys(S.days)) if (key.endsWith("|" + id) && key.slice(0, 10) >= from) delete S.days[key];
+      i++;
+    }
+    save(); closeSheet(); toast("Ciclul următor este în plan"); render();
+  },
+  "cal-publish": async () => { if (!S.sync.calId) { const a = new Uint8Array(16); crypto.getRandomValues(a); S.sync.calId = [...a].map(x => x.toString(16).padStart(2, "0")).join(""); save(true); } toast("Public calendarul..."); await publishCal(true); render(); },
+  "cal-copy": async () => { try { await navigator.clipboard.writeText(calUrl()); toast("Adresa copiată"); } catch (e) { prompt("Copiază adresa:", calUrl()); } },
+  "cal-off": () => { if (confirm("Oprești publicarea? Fișierul rămâne pe GitHub până îl ștergi din repo; abonamentul nu va mai primi actualizări.")) { S.sync.calId = ""; S.sync.calHash = 0; S.sync.calAt = 0; S.sync.calError = ""; save(true); render(); } },
   "supplies-edit": () => suppliesSheet(),
   "supplies-save": () => { const st = S.supplies = S.supplies || {}; document.querySelectorAll("#sheet [data-sk]").forEach(i => { const v = parseFloat(i.value); st[i.dataset.sk] = isNaN(v) ? null : v; }); st.updated = todayKey(); save(); closeSheet(); toast("Stoc salvat"); render(); },
   "report-open": () => reportSheet(),
