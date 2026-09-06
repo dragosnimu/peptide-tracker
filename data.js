@@ -1,7 +1,7 @@
 /* Datele planului: substantele din comanda MKM (august 2026), dozele standard din fisa
    furnizorului si avertismentele din raportul de analiza. Tot ce e aici poate fi
    suprascris din aplicatie (Calendar -> Editeaza planul). */
-const APP_VERSION = "1.8";
+const APP_VERSION = "1.9";
 const APP_DATE = "2026-09-05";
 const PLAN_START = "2026-09-05";
 const PLAN_WEEKS = 16;
@@ -24,6 +24,13 @@ const SUBS = [
     ],
     stab: "După prima puncție: 14-21 zile, la întuneric, nu se congelează.",
     flag: "Doze subterapeutice (raport): aceleași substanțe se obțin oral la doze de 10-20x mai mari.",
+    routeNotes: {
+      sc: "Fișa furnizorului: 0,5-1 ml SC, 1-3x/săpt. Injecție de 1 ml, ușor de făcut în abdomen.",
+      im: "Raportul: 1-2 ml IM sau SC, 2-3x/săpt. Același program (L/Mi/V) și aceeași doză de 1 ml; IM permite 2 ml dacă vrei capătul de sus al dozei, cu stocul consumat de două ori mai repede."
+    },
+    routeOptions: {
+      im: { route: "IM", cycle: "L/Mi/V intramuscular, 1 ml (raport: 1-2 ml), cicluri de 8 săpt. + 2 săpt. pauză" }
+    },
     cycle: "L/Mi/V în cicluri de 8 săpt. + 2 săpt. pauză, până la epuizarea stocului: 83 doze (fiolele expiră în pauze), până pe 26 apr 2027"
   },
   {
@@ -98,7 +105,15 @@ const SUBS = [
     ],
     stab: "Reconstituit: 7-14 zile, nu mai mult. Galben = aruncă.",
     flag: "Nu prelungi fiola peste 14 zile.",
-    cycle: "L/Mi/V în cicluri de 8 săpt. + 2 săpt. pauză (raport: 4-8 săpt.): 30 doze, până pe 18 dec"
+    cycle: "L/Mi/V în cicluri de 8 săpt. + 2 săpt. pauză (raport: 4-8 săpt.): 30 doze, până pe 18 dec",
+    routeNotes: {
+      sc: "Fișa furnizorului: 100-200 mg SC, 2-3x/săpt. Doză mică, injecție de 1 ml. Usturimea e obișnuită (soluție acidă). O fiolă = 3 doze.",
+      im: "Raportul: 600-1200 mg IM sau IV lent, 1-3x/săpt. Aici o fiolă întreagă (600 mg = 3 ml) de 2x/săpt., luni și joi, în coapsă sau fesier (nu deltoid, volum prea mare). Cele 10 fiole ajung 5 săptămâni, fără doză de test."
+    },
+    routeOptions: {
+      im: { route: "IM", doseMg: 600, pattern: "dow", dow: [1, 4], to: "2026-10-29", cycleOn: 0, cycleOff: 0, test: false,
+        cycle: "L/J intramuscular, o fiolă întreagă (600 mg = 3 ml): 10 doze, până pe 29 oct" }
+    }
   },
   {
     id: "motsc", name: "MOTS-c", short: "MOTS-c",
@@ -249,6 +264,67 @@ const EVENTS = {
   "2027-06-04": "Ultima zi Selank (stoc epuizat).",
   "2027-07-08": "Ultima zi GHK-Cu (stoc epuizat).",
   "2027-08-03": "Ultima zi DSIP (stoc epuizat). Sfârșitul planului."
+};
+
+/* Cai de administrare: procedura pas cu pas, avantaje, dezavantaje, locuri. */
+const ROUTES = {
+  sc: {
+    key: "sc", label: "SC", name: "Subcutanat (SC)",
+    summary: "Injecție în țesutul gras de sub piele, cu ac scurt de insulină. Calea din fișa furnizorului pentru toate substanțele.",
+    pros: [
+      "Cea mai simplă autoadministrare: ac scurt (4-8 mm), pliu cutanat, fără risc de vas sau nerv important.",
+      "Absorbție lentă și constantă, potrivită peptidelor.",
+      "Locuri multe și ușor de rotit: abdomen, coapsă, braț.",
+      "Este calea descrisă în fișa furnizorului și în majoritatea protocoalelor pentru peptide."
+    ],
+    cons: [
+      "Volum limitat: confortabil până la 1 ml per injecție (max ~1,5 ml).",
+      "Soluțiile acide (Glutation) și NAD+ ustură sau ard local.",
+      "Noduli, roșeață sau vânătăi la locul injecției dacă nu rotești locurile."
+    ],
+    sites: ["abdomen stânga", "abdomen dreapta", "coapsă stângă", "coapsă dreaptă", "braț stâng", "braț drept"],
+    needle: "Seringă de insulină U-100 (0,3-1 ml), ac 4-8 mm, 29-31 G.",
+    steps: [
+      "Spală-te pe mâini. Pregătește seringa, tampoane cu alcool, containerul pentru ace.",
+      "Alege locul: abdomen la peste 5 cm de ombilic, fața externă a coapsei sau spatele brațului. Nu repeta locul de ieri.",
+      "Dezinfectează dopul fiolei și pielea cu alcool; lasă să se usuce complet (altfel ustură).",
+      "Trage doza în seringă, elimină bulele de aer bătând ușor cilindrul și împingând pistonul până apare o picătură.",
+      "Prinde un pliu de piele între degete (2-3 cm).",
+      "Introdu acul în pliu la 45-90° (90° cu ac de 4-6 mm), dintr-o singură mișcare.",
+      "Injectează lent și uniform. La NAD+ foarte lent.",
+      "Așteaptă 5-10 secunde, scoate acul, eliberează pliul. Apasă ușor cu un tampon, nu masa.",
+      "Aruncă seringa în container. Notează locul în jurnal."
+    ]
+  },
+  im: {
+    key: "im", label: "IM", name: "Intramuscular (IM)",
+    summary: "Injecție în mușchi, cu ac mai lung. Permite volume mai mari și dozele intramusculare din raport.",
+    pros: [
+      "Volum mare per injecție: 2-3 ml în deltoid, până la 5 ml în fesier sau coapsă.",
+      "Absorbție mai rapidă decât subcutanat.",
+      "Soluțiile acide ustură mai puțin în mușchi decât sub piele.",
+      "Permite doza din raport la Glutation (600-1200 mg, adică o fiolă întreagă)."
+    ],
+    cons: [
+      "Ac mai lung (25-38 mm) și mai gros (22-25 G): mai dureros, mai greu de autoadministrat, mai ales în fesier.",
+      "Risc de a atinge un vas sau nervul sciatic dacă locul e ales greșit; ventrogluteal este locul sigur, nu cadranul superior-extern clasic.",
+      "Durere musculară 1-2 zile, uneori hematom.",
+      "Pentru Glutation, IM nu este calea din fișa furnizorului; raportul avertizează că riscul principal la injectabile vine din preparate nesterile, indiferent de cale."
+    ],
+    sites: ["deltoid stâng (max 2 ml)", "deltoid drept (max 2 ml)", "fesier stâng (ventrogluteal)", "fesier drept (ventrogluteal)", "coapsă stângă (vastus lateralis)", "coapsă dreaptă (vastus lateralis)"],
+    needle: "Seringă de 3 ml cu ac 25 mm (coapsă, deltoid) sau 38 mm (fesier), 22-25 G. Poți trage cu un ac gros și injecta cu unul mai subțire.",
+    steps: [
+      "Spală-te pe mâini. Pregătește seringa de 3 ml, două ace (unul pentru tras, unul pentru injectat), tampoane cu alcool.",
+      "Alege locul. Coapsă (vastus lateralis): treimea mijlocie a feței antero-externe, cel mai ușor pentru autoadministrare. Deltoid: 3 degete sub acromion, doar pentru volume ≤ 2 ml. Fesier ventrogluteal: palma pe trohanter, degetul arătător pe spina iliacă antero-superioară, mediusul spre creasta iliacă; injectezi în V-ul dintre degete.",
+      "Dezinfectează dopul fiolei și pielea; lasă să se usuce.",
+      "Trage doza cu acul gros, schimbă acul, elimină aerul.",
+      "Întinde pielea cu mâna liberă (nu pliu). Relaxează mușchiul.",
+      "Introdu acul la 90°, rapid și ferm, până aproape de garda acului.",
+      "Injectează lent: aproximativ 10 secunde per ml.",
+      "Așteaptă 10 secunde, scoate acul în aceeași direcție, apasă cu un tampon. Nu masa locul.",
+      "Aruncă acele în container. Alternează partea stângă/dreaptă la fiecare injecție. Notează locul în jurnal."
+    ]
+  }
 };
 
 const SITES = ["abdomen stânga", "abdomen dreapta", "coapsă stângă", "coapsă dreaptă", "braț stâng", "braț drept"];

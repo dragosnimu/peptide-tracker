@@ -34,7 +34,14 @@ function save() {
 }
 
 /* ---------- plan ---------- */
-const sub = id => { const b = SUBS.find(s => s.id === id); return Object.assign({}, b, S.plan[id] || {}); };
+const sub = id => {
+  const b = SUBS.find(s => s.id === id), p = S.plan[id] || {};
+  const rk = p.routeKey || "sc";
+  const ro = (b.routeOptions && b.routeOptions[rk]) || {};
+  return Object.assign({}, b, ro, p, { routeKey: rk });
+};
+const routeOf = s => ROUTES[s.routeKey || "sc"];
+const hasIM = s => !!(s.routeOptions && s.routeOptions.im);
 const allSubs = () => SUBS.map(s => sub(s.id));
 function doseLabel(s, mg) {
   if (s.unit === "ml") return num(mg / s.mgPerMl) + " ml";
@@ -102,8 +109,8 @@ function doseCard(d, k) {
   else if (d.skipped) actions = `<div class="row wrap"><span class="chip">${d.moved ? "mutată pe mâine" : "sărită"}</span><span class="grow"></span><button class="btn small" data-act="unskip" data-id="${s.id}" data-k="${k}">Anulează</button></div>`;
   else actions = `<div class="row wrap"><button class="btn primary small" data-act="log-new" data-id="${s.id}" data-k="${k}">Administrat</button><button class="btn small" data-act="skip" data-id="${s.id}" data-k="${k}">Sari</button><button class="btn small" data-act="move" data-id="${s.id}" data-k="${k}">Mâine</button><span class="grow"></span><button class="btn small" data-act="dose-edit" data-id="${s.id}" data-k="${k}">Doză</button></div>`;
   return `<div class="dose ${cls}">
-    <div class="row between"><span class="name">${esc(s.short)}</span><span class="chip ${s.time}">${tl(s.time)}</span></div>
-    <div class="row"><span class="u">${fmtU(d.units)}</span><span class="muted">${esc(d.label)} · ${esc(s.route)}</span></div>
+    <div class="row between"><span class="name">${esc(s.short)}</span><span class="row" style="gap:6px">${hasIM(s) ? `<button class="chip acc" data-act="route-edit" data-id="${s.id}" title="Schimbă calea">${esc(s.route)} ▾</button>` : `<span class="chip">${esc(s.route)}</span>`}<span class="chip ${s.time}">${tl(s.time)}</span></span></div>
+    <div class="row"><span class="u">${fmtU(d.units)}</span><span class="muted">${esc(d.label)}${d.units > 100 ? ` = ${num(d.units / 100)} ml (seringă de 3 ml)` : ""}</span></div>
     ${d.note ? `<div class="note">${esc(d.note)}</div>` : ""}
     ${vialLine(d)}
     ${actions}
@@ -183,7 +190,7 @@ function renderCal() {
     ${ds.length ? slotBlock(ds, selDay) : `<p class="muted">Nicio administrare în această zi.</p>`}
   </div>`;
   h += `<div class="card"><h2>Ansamblu pe ${planWeeks()} săptămâni</h2><p class="tiny" style="margin-bottom:8px">O coloană = o săptămână. Bară plină = zilnic, estompată = 2-3x/săpt., contur punctat = pauză de washout între cicluri. Numărul de lângă substanță = doze planificate până la epuizarea stocului.</p>${gantt()}</div>`;
-  h += `<div class="card"><h2>Editează planul</h2><div class="stack">${allSubs().map(s => `<div class="row between"><div class="grow"><b>${esc(s.short)}</b> <span class="tiny">${s.stopped ? "oprit" : fmt(s.from) + " – " + fmt(s.to) + " " + fromKey(s.to).getFullYear() + " · " + doseCount(s) + " doze · " + tl(s.time) + " · " + doseLabel(s, s.doseMg) + " = " + fmtU(unitsFor(s, s.doseMg, activeVial(s.id)))}</span>${S.plan[s.id] ? ' <span class="chip acc">modificat</span>' : ""}</div><button class="btn small" data-act="plan-edit" data-id="${s.id}">Editează</button></div>`).join("")}</div></div>`;
+  h += `<div class="card"><h2>Editează planul</h2><div class="stack">${allSubs().map(s => `<div class="row between"><div class="grow"><b>${esc(s.short)}</b> <span class="tiny">${s.stopped ? "oprit" : fmt(s.from) + " – " + fmt(s.to) + " " + fromKey(s.to).getFullYear() + " · " + doseCount(s) + " doze · " + tl(s.time) + " · " + doseLabel(s, s.doseMg) + " = " + fmtU(unitsFor(s, s.doseMg, activeVial(s.id)))}</span>${hasIM(s) ? ` <span class="chip ${s.routeKey === "im" ? "acc" : ""}">${esc(s.route)}</span>` : ""}${S.plan[s.id] ? ' <span class="chip acc">modificat</span>' : ""}</div><button class="btn small" data-act="plan-edit" data-id="${s.id}">Editează</button></div>`).join("")}</div></div>`;
   main.innerHTML = `<div class="view">${h}</div>`;
 }
 function gantt() {
@@ -277,22 +284,24 @@ function renderLog() {
   h += `<div class="card">${list.length ? list.map(e => {
     const s = sub(e.sub);
     return `<div class="entry"><div class="h"><span>${esc(s.short)} · ${esc(e.label)} = ${fmtU(e.units)}${e.planned && Math.abs(e.units - e.planned.units) > 0.01 ? ` <span class="chip warn">planificat ${fmtU(e.planned.units)}</span>` : ""}</span><span>${fmtL(e.date)} ${esc(e.time || "")}</span></div>
-      <div class="m row wrap">${e.feel ? `<span class="feel f${e.feel}">${e.feel}</span>` : ""}<span>${esc(e.site || "")}</span>${(e.symptoms || []).map(x => `<span class="chip">${esc(x)}</span>`).join("")}</div>
+      <div class="m row wrap">${e.feel ? `<span class="feel f${e.feel}">${e.feel}</span>` : ""}<span class="chip">${(e.route || "sc").toUpperCase()}</span><span>${esc(e.site || "")}</span>${(e.symptoms || []).map(x => `<span class="chip">${esc(x)}</span>`).join("")}</div>
       ${e.comment ? `<div class="m">${esc(e.comment)}</div>` : ""}
       <div class="row"><button class="btn small" data-act="log-edit" data-eid="${e.id}">Editează</button></div></div>`;
   }).join("") : `<p class="muted">Nicio înregistrare${logFilter ? " pentru această substanță" : ""}.</p>`}</div>`;
   main.innerHTML = `<div class="view">${h}</div>`;
   $("#log-filter").addEventListener("change", e => { logFilter = e.target.value; renderLog(); });
 }
-function suggestSite() {
-  const last = S.log.slice().sort((a, b) => (b.date + (b.time || "")).localeCompare(a.date + (a.time || "")))[0];
-  if (!last || !last.site) return SITES[0];
-  const i = SITES.indexOf(last.site); return SITES[(i + 1) % SITES.length];
+function suggestSite(rk, ml) {
+  const sites = ROUTES[rk || "sc"].sites.filter(x => !(ml > 2 && x.startsWith("deltoid")));
+  const last = S.log.filter(e => (e.route || "sc") === (rk || "sc")).sort((a, b) => (b.date + (b.time || "")).localeCompare(a.date + (a.time || "")))[0];
+  if (!last || !last.site) return sites[0];
+  const i = sites.indexOf(last.site); return i < 0 ? sites[0] : sites[(i + 1) % sites.length];
 }
 function logSheet(id, k, entry) {
   const s = sub(id);
   const d = entry ? null : scheduled(s, k);
-  const e = entry || { id: Date.now(), date: k, time: nowHM(), sub: id, mg: d.mg, units: d.units, label: d.label, site: suggestSite(), feel: 0, symptoms: [], comment: "", planned: { mg: d.mg, units: d.units, label: d.label } };
+  const rk0 = entry ? (entry.route || "sc") : (s.routeKey || "sc");
+  const e = entry || { id: Date.now(), date: k, time: nowHM(), sub: id, mg: d.mg, units: d.units, label: d.label, site: suggestSite(rk0, d ? d.units / 100 : 0), feel: 0, symptoms: [], comment: "", planned: { mg: d.mg, units: d.units, label: d.label }, route: rk0 };
   const vialOf = entry ? ((S.vials[id] || []).find(x => x.n === entry.vial) || activeVial(id)) : activeVial(id);
   const cc = conc(s, vialOf);
   const planned = e.planned || { mg: e.mg, units: e.units, label: e.label };
@@ -303,7 +312,9 @@ function logSheet(id, k, entry) {
     ${!entry && d && !d.vial ? `<div class="alert"><b>Nu ai o fiolă activă pentru ${esc(s.short)}</b>Poți salva oricum, dar stocul din fiolă nu va fi scăzut.</div>` : ""}
     <div class="stack">
       <label class="f">Ora<input type="time" id="l-time" value="${esc(e.time)}"></label>
-      <label class="f">Locul injecției<select id="l-site">${SITES.map(x => `<option ${x === e.site ? "selected" : ""}>${x}</option>`).join("")}</select></label>
+      <label class="f">Calea de administrare<select id="l-route"><option value="sc" ${rk0 === "sc" ? "selected" : ""}>Subcutanat (SC)</option><option value="im" ${rk0 === "im" ? "selected" : ""}>Intramuscular (IM)</option></select></label>
+      <label class="f">Locul injecției<select id="l-site">${ROUTES[rk0].sites.map(x => `<option ${x === e.site ? "selected" : ""}>${x}</option>`).join("")}</select></label>
+      <details><summary class="tiny" style="cursor:pointer">Procedura pas cu pas (${ROUTES[rk0].label})</summary><ol class="steps" id="l-proc" style="font-size:13.5px;margin-top:6px">${ROUTES[rk0].steps.map(x => `<li>${esc(x)}</li>`).join("")}</ol><p class="tiny" id="l-needle">${esc(ROUTES[rk0].needle)}</p></details>
       <div><div class="tiny" style="margin-bottom:4px">Cum te simți (1 = rău, 5 = foarte bine)</div><div class="scale" id="l-feel">${[1, 2, 3, 4, 5].map(i => `<button type="button" class="${e.feel === i ? "on" : ""}" data-f="${i}">${i}</button>`).join("")}</div><div class="scale-l"><span>rău</span><span>foarte bine</span></div></div>
       <div><div class="tiny" style="margin-bottom:6px">Simptome / observații</div><div class="chips" id="l-sym">${SYMPTOMS.map(x => `<button type="button" class="tog ${(e.symptoms || []).includes(x) ? "on" : ""}" data-s="${esc(x)}">${esc(x)}</button>`).join("")}</div></div>
       <label class="f">Comentariu<textarea id="l-comment" placeholder="ex. ușoară usturime 2 min, apoi nimic">${esc(e.comment)}</textarea></label>
@@ -319,6 +330,14 @@ function logSheet(id, k, entry) {
       host.querySelector("#l-calc").innerHTML = `<b>${fmtU(u)} = ${esc(doseLabel(s, mg))}</b>${diff ? `<span style="color:var(--warn)">Diferit de doza recomandată (${fmtU(planned.units)}): ${u > planned.units ? "+" : "−"}${num(Math.abs(u - planned.units))} U</span>` : "Doza recomandată."}${u > 100 ? `<br><span style="color:var(--warn)">Peste o seringă de 1 ml.</span>` : ""}`;
     };
     host.querySelector("#l-units").addEventListener("input", calc); calc();
+    host.querySelector("#l-route").addEventListener("change", ev => {
+      const r = ROUTES[ev.target.value]; const sel = host.querySelector("#l-site"); const cur = sel.value;
+      sel.innerHTML = r.sites.map(x => `<option ${x === cur ? "selected" : ""}>${x}</option>`).join("");
+      if (!r.sites.includes(cur)) sel.value = suggestSite(ev.target.value, (parseFloat(host.querySelector("#l-units").value) || 0) / 100);
+      host.querySelector("#l-proc").innerHTML = r.steps.map(x => `<li>${esc(x)}</li>`).join("");
+      host.querySelector("#l-needle").textContent = r.needle;
+      host.querySelector("details summary").textContent = `Procedura pas cu pas (${r.label})`;
+    });
     host.querySelector("#l-feel").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return; host.__draft.feel = +b.dataset.f; host.querySelectorAll("#l-feel button").forEach(x => x.classList.toggle("on", x === b)); });
     host.querySelector("#l-sym").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return; b.classList.toggle("on"); const v = b.dataset.s; const i = host.__draft.symptoms.indexOf(v); if (i >= 0) host.__draft.symptoms.splice(i, 1); else host.__draft.symptoms.push(v); });
   });
@@ -331,6 +350,7 @@ function planSheet(id) {
   const html = `<h2>Plan: ${esc(s.name)}</h2>
     <p class="muted">${esc(s.cycle)}. Modificările se aplică de acum înainte; administrările deja înregistrate rămân.</p>
     <div class="stack">
+      ${hasIM(s) ? `<div class="alert info"><b>Cale de administrare: ${esc(routeOf(s).name)}</b>${esc(s.routeNotes[s.routeKey])} <button class="btn small" data-act="route-edit" data-id="${id}" style="margin-top:6px">Schimbă calea (SC / IM)</button></div>` : `<p class="tiny">Cale: ${esc(s.route)}. Sursele nu descriu o alternativă intramusculară pentru această substanță.</p>`}
       <label class="check"><input type="checkbox" id="p-stopped" ${s.stopped ? "checked" : ""}> Oprit (nu mai apare în calendar)</label>
       <label class="f">Începe<input type="date" id="p-from" value="${s.from}"></label>
       <label class="check"><input type="checkbox" id="p-shift" checked> Când mut startul, mută și sfârșitul și pauzele cu același număr de zile</label>
@@ -353,6 +373,28 @@ function planSheet(id) {
   });
 }
 const toMg = (s, v) => s.unit === "ml" ? v * s.mgPerMl : s.unit === "mcg" ? v / 1000 : v;
+function routeSheet(id) {
+  const s = sub(id); if (!hasIM(s)) return;
+  const b = SUBS.find(x => x.id === id);
+  const opt = rk => {
+    const eff = Object.assign({}, b, (b.routeOptions && b.routeOptions[rk]) || {});
+    const r = ROUTES[rk];
+    const u = unitsFor(eff, eff.doseMg, activeVial(id));
+    return `<div class="card" style="padding:12px 14px">
+      <label class="check" style="font-weight:600;font-size:16px"><input type="radio" name="rt" value="${rk}" ${s.routeKey === rk ? "checked" : ""}> ${esc(r.name)}${s.routeKey === rk ? ' <span class="chip acc">ales</span>' : ""}</label>
+      <p class="muted" style="font-size:14px">${esc(r.summary)}</p>
+      <div class="alert info" style="margin:8px 0"><b>Pentru ${esc(s.short)}</b>${esc(b.routeNotes[rk])}<br><span class="mono">Doză: ${esc(doseLabel(eff, eff.doseMg))} = ${fmtU(u)}${u > 100 ? " = " + num(u / 100) + " ml" : ""} · ${esc(eff.cycle)}</span></div>
+      <div class="tiny" style="margin-top:6px"><b style="color:var(--ok)">Avantaje</b></div><ul class="steps" style="font-size:13.5px;list-style:disc">${r.pros.map(x => `<li>${esc(x)}</li>`).join("")}</ul>
+      <div class="tiny" style="margin-top:6px"><b style="color:var(--warn)">Dezavantaje</b></div><ul class="steps" style="font-size:13.5px;list-style:disc">${r.cons.map(x => `<li>${esc(x)}</li>`).join("")}</ul>
+      <details style="margin-top:8px"><summary class="tiny" style="cursor:pointer">Procedura pas cu pas (${r.label}) · ${esc(r.needle)}</summary><ol class="steps" style="font-size:13.5px;margin-top:6px">${r.steps.map(x => `<li>${esc(x)}</li>`).join("")}</ol><p class="tiny">Locuri: ${r.sites.join(", ")}.</p></details>
+    </div>`;
+  };
+  openSheet(`<h2>Calea de administrare: ${esc(s.name)}</h2>
+    <p class="muted">Alege o singură cale pentru planificare. La fiecare administrare poți totuși nota altă cale, dacă ai făcut excepție.</p>
+    <div class="stack" id="rt-opts">${opt("sc")}${opt("im")}</div>
+    <p class="tiny">Schimbarea căii resetează doza, frecvența și data de sfârșit la valorile căii alese; administrările deja înregistrate rămân.</p>
+    <div class="row"><button class="btn primary grow" data-act="route-save" data-id="${id}">Salvează calea</button><button class="btn" data-act="close">Anulează</button></div>`);
+}
 function doseSheet(id, k) {
   const s = sub(id), d = scheduled(s, k);
   const dv = s.unit === "ml" ? d.mg / s.mgPerMl : s.unit === "mcg" ? d.mg * 1000 : d.mg;
@@ -494,11 +536,11 @@ const A = {
   "log-edit": d => { const e = S.log.find(x => x.id === +d.eid); if (e) logSheet(e.sub, e.date, e); },
   "log-save": d => {
     const host = $("#sheet"), dr = host.__draft;
-    const time = host.querySelector("#l-time").value, site = host.querySelector("#l-site").value, comment = host.querySelector("#l-comment").value.trim();
+    const time = host.querySelector("#l-time").value, site = host.querySelector("#l-site").value, comment = host.querySelector("#l-comment").value.trim(), route = host.querySelector("#l-route").value;
     if (d.new) {
       const s = sub(d.id), v = activeVial(d.id);
       if (!(dr.units > 0)) return toast("Introdu unitățile administrate");
-      S.log.push({ id: +d.eid, date: d.k, time, sub: d.id, mg: dr.mg, units: dr.units, label: dr.label, site, feel: dr.feel, symptoms: dr.symptoms, comment, vial: v ? v.n : null, planned: dr.planned });
+      S.log.push({ id: +d.eid, date: d.k, time, sub: d.id, mg: dr.mg, units: dr.units, label: dr.label, site, feel: dr.feel, symptoms: dr.symptoms, comment, vial: v ? v.n : null, planned: dr.planned, route });
       if (v) v.leftMg = Math.max(0, Math.round((v.leftMg - dr.mg) * 1000) / 1000);
       const dk = S.days[d.k + "|" + d.id]; if (dk && dk.skip) { delete dk.skip; delete dk.moved; }
       toast(`${s.short} înregistrat: ${fmtU(dr.units)}`);
@@ -507,7 +549,7 @@ const A = {
       if (!(dr.units > 0)) return toast("Introdu unitățile administrate");
       const s = sub(e.sub), vs = S.vials[e.sub] || [], v = vs.find(x => x.n === e.vial);
       if (v) v.leftMg = Math.min(s.vialMg, Math.max(0, Math.round((v.leftMg + e.mg - dr.mg) * 1000) / 1000));
-      Object.assign(e, { time, site, feel: dr.feel, symptoms: dr.symptoms, comment, mg: dr.mg, units: dr.units, label: dr.label }); toast("Actualizat");
+      Object.assign(e, { time, site, feel: dr.feel, symptoms: dr.symptoms, comment, mg: dr.mg, units: dr.units, label: dr.label, route }); toast("Actualizat");
     }
     save(); closeSheet(); render();
   },
@@ -528,6 +570,14 @@ const A = {
   "dose-save": d => { const s = sub(d.id); const mg = toMg(s, parseFloat($("#d-dose").value) || 0); if (mg <= 0) return toast("Doză invalidă"); S.days[d.k + "|" + d.id] = Object.assign(S.days[d.k + "|" + d.id] || {}, { mg }); save(); closeSheet(); render(); },
   "dose-reset": d => { const o = S.days[d.k + "|" + d.id]; if (o) { delete o.mg; if (!Object.keys(o).length) delete S.days[d.k + "|" + d.id]; } save(); closeSheet(); render(); },
   "plan-edit": d => planSheet(d.id),
+  "route-edit": d => routeSheet(d.id),
+  "route-save": d => {
+    const rk = ($("#sheet input[name=rt]:checked") || {}).value || "sc";
+    const p = S.plan[d.id] = S.plan[d.id] || {};
+    if (p.routeKey !== rk) { for (const k of ["doseMg", "pattern", "dow", "to", "cycleOn", "cycleOff", "test"]) delete p[k]; }
+    p.routeKey = rk; if (rk === "sc" && Object.keys(p).length === 1) delete S.plan[d.id];
+    save(); closeSheet(); toast(`${sub(d.id).short}: ${ROUTES[rk].name}`); render();
+  },
   "plan-save": d => {
     const s = sub(d.id), host = $("#sheet");
     const from = host.querySelector("#p-from").value, to = host.querySelector("#p-to").value;
