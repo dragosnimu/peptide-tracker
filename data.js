@@ -1,7 +1,7 @@
 /* Datele planului: substantele din comanda MKM (august 2026), dozele standard din fisa
    furnizorului si avertismentele din raportul de analiza. Tot ce e aici poate fi
    suprascris din aplicatie (Calendar -> Editeaza planul). */
-const APP_VERSION = "1.9";
+const APP_VERSION = "2.0";
 const APP_DATE = "2026-09-05";
 const PLAN_START = "2026-09-05";
 const PLAN_WEEKS = 16;
@@ -12,7 +12,7 @@ const SUBS = [
     from: "2026-09-05", to: "2027-04-26", time: "am", route: "SC", cycleOn: 56, cycleOff: 14,
     pattern: "dow", dow: [1, 3, 5], extra: ["2026-09-05"], pauses: [],
     unit: "ml", doseMg: 86.5, mgPerMl: 86.5,
-    vialMg: 865, vialMl: 10, ready: true, waterMl: 0, stabilityDays: 21, stock: 10,
+    vialMg: 865, vialMl: 10, ready: true, waterMl: 0, stabilityDays: 21, stock: 10, maxMg: 173,
     test: true, testNote: "test ½ doză, la prânz (SS-31 dimineața)",
     what: "Amestec de aminoacizi liberi (arginină, ornitină, citrulină, lizină, glutamină, prolină, taurină, carnitină, NAC). Nu este peptidă.",
     steps: [
@@ -37,7 +37,7 @@ const SUBS = [
     id: "ss31", name: "SS-31 (Elamipretide)", short: "SS-31",
     from: "2026-09-05", to: "2026-09-24", time: "am", route: "SC", cycleOn: 0, cycleOff: 0,
     pattern: "daily", unit: "mg", doseMg: 5,
-    vialMg: 10, waterMl: 1, stabilityDays: 28, stock: 10,
+    vialMg: 10, waterMl: 1, stabilityDays: 28, stock: 10, maxMg: 10,
     test: false,
     what: "Tetrapeptidă care se leagă de cardiolipina mitocondrială. Singurul compus cu studii clinice de fază 3 (rezultate mixte).",
     steps: [
@@ -55,7 +55,7 @@ const SUBS = [
     id: "bb10", name: "BB10 (BPC-157 + TB-500)", short: "BB10",
     from: "2026-09-12", to: "2027-05-06", time: "am", route: "SC", cycleOn: 42, cycleOff: 14,
     pattern: "daily", unit: "mg", doseMg: 0.5,
-    vialMg: 10, waterMl: 2, stabilityDays: 28, stock: 10,
+    vialMg: 10, waterMl: 2, stabilityDays: 28, stock: 10, maxMg: 1,
     test: true, testNote: "test ½ doză",
     what: "Blend 1:1 de peptide de reparare tisulară. Date preclinice; interzise WADA.",
     steps: [
@@ -73,7 +73,7 @@ const SUBS = [
     id: "nad", name: "NAD+", short: "NAD+",
     from: "2026-09-19", to: "2027-02-01", time: "am", route: "SC lent", cycleOn: 28, cycleOff: 14,
     pattern: "daily", unit: "mg", doseMg: 100,
-    vialMg: 1000, waterMl: 3, stabilityDays: 14, stock: 10,
+    vialMg: 1000, waterMl: 3, stabilityDays: 14, stock: 10, maxMg: 100,
     test: false, titration: [{ days: 3, mg: 25, note: "titrare, zile 1-3" }, { days: 4, mg: 50, note: "titrare, zile 4-7" }],
     what: "Coenzimă, nu peptidă. Injectarea directă e slab justificată farmacocinetic (raport); injecția e notoriu dureroasă.",
     steps: [
@@ -92,7 +92,7 @@ const SUBS = [
     id: "gsh", name: "Glutation", short: "Glutation",
     from: "2026-09-28", to: "2026-12-18", time: "pm", route: "SC", cycleOn: 56, cycleOff: 14,
     pattern: "dow", dow: [1, 3, 5], unit: "mg", doseMg: 200,
-    vialMg: 600, waterMl: 3, stabilityDays: 14, stock: 10,
+    vialMg: 600, waterMl: 3, stabilityDays: 14, stock: 10, maxMg: 600,
     test: true, testNote: "test ½ doză",
     what: "Principalul antioxidant intracelular. Injectabil: avertizări de reglementare pentru preparate nesterile.",
     steps: [
@@ -119,7 +119,7 @@ const SUBS = [
     id: "motsc", name: "MOTS-c", short: "MOTS-c",
     from: "2026-10-05", to: "2026-12-24", time: "am", route: "SC", cycleOn: 56, cycleOff: 14,
     pattern: "dow", dow: [1, 4], unit: "mg", doseMg: 5,
-    vialMg: 10, waterMl: 2, stabilityDays: 14, stock: 10,
+    vialMg: 10, waterMl: 2, stabilityDays: 14, stock: 10, maxMg: 10,
     test: true, testNote: "test ½ doză",
     what: "Peptidă codificată mitocondrial, activator AMPK. Cele mai bune date preclinice din grupul de longevitate.",
     steps: [
@@ -136,7 +136,7 @@ const SUBS = [
     id: "ghk", name: "GHK-Cu", short: "GHK-Cu",
     from: "2026-10-10", to: "2027-07-08", time: "pm", route: "SC", cycleOn: 56, cycleOff: 28,
     pattern: "daily", unit: "mg", doseMg: 2.5,
-    vialMg: 50, waterMl: 5, stabilityDays: 28, stock: 10,
+    vialMg: 50, waterMl: 5, stabilityDays: 28, stock: 10, maxMg: 5,
     test: true, testNote: "test ½ doză",
     what: "Tripeptidă de cupru. Dovezi bune topic; injectabil sistemic slab documentat.",
     steps: [
@@ -154,7 +154,7 @@ const SUBS = [
     id: "epi", name: "Epithalon", short: "Epithalon",
     from: "2026-10-17", to: "2026-11-05", time: "pm", route: "SC", cycleOn: 0, cycleOff: 0,
     pattern: "daily", unit: "mg", doseMg: 5,
-    vialMg: 10, waterMl: 2, stabilityDays: 30, stock: 10,
+    vialMg: 10, waterMl: 2, stabilityDays: 30, stock: 10, maxMg: 10,
     test: true, testNote: "test ½ doză, seara devreme",
     what: "Tetrapeptidă Khavinson. Dovezi slabe, dintr-un singur grup.",
     steps: [
@@ -171,7 +171,7 @@ const SUBS = [
     id: "pin", name: "Pinealon", short: "Pinealon",
     from: "2026-10-24", to: "2026-11-12", time: "pm", route: "SC", cycleOn: 0, cycleOff: 0,
     pattern: "daily", unit: "mg", doseMg: 5,
-    vialMg: 10, waterMl: 2, stabilityDays: 28, stock: 10,
+    vialMg: 10, waterMl: 2, stabilityDays: 28, stock: 10, maxMg: 10,
     test: true, testNote: "test ½ doză",
     what: "Tripeptidă Khavinson pentru creier. Cele mai slabe dovezi din comandă.",
     steps: [
@@ -188,7 +188,7 @@ const SUBS = [
     id: "dsip", name: "DSIP", short: "DSIP",
     from: "2026-10-31", to: "2027-08-03", time: "pm", route: "SC", cycleOn: 28, cycleOff: 14,
     pattern: "daily", unit: "mcg", doseMg: 0.2,
-    vialMg: 5, waterMl: 2, stabilityDays: 28, stock: 10,
+    vialMg: 5, waterMl: 2, stabilityDays: 28, stock: 10, maxMg: 0.5,
     test: true, testNote: "test ½ doză",
     what: "Nonapeptidă din 1974, mecanism neclar. Studii vechi și contradictorii.",
     steps: [
@@ -206,7 +206,7 @@ const SUBS = [
     id: "semax", name: "Semax", short: "Semax",
     from: "2026-11-07", to: "2027-05-25", time: "am", route: "SC", cycleOn: 42, cycleOff: 14,
     pattern: "daily", unit: "mcg", doseMg: 0.3,
-    vialMg: 5, waterMl: 2, stabilityDays: 28, stock: 10,
+    vialMg: 5, waterMl: 2, stabilityDays: 28, stock: 10, maxMg: 0.5,
     test: true, testNote: "test ½ doză",
     what: "Fragment ACTH(4-7)-Pro-Gly-Pro. Medicament în Rusia; studiat intranazal.",
     steps: [
@@ -223,7 +223,7 @@ const SUBS = [
     id: "selank", name: "Selank", short: "Selank",
     from: "2026-11-14", to: "2027-06-04", time: "pm", route: "SC", cycleOn: 42, cycleOff: 14,
     pattern: "daily", unit: "mcg", doseMg: 0.3,
-    vialMg: 5, waterMl: 2, stabilityDays: 30, stock: 10,
+    vialMg: 5, waterMl: 2, stabilityDays: 30, stock: 10, maxMg: 0.5,
     test: true, testNote: "test ½ doză",
     what: "Tuftsin-Pro-Gly-Pro, anxiolitic fără sedare în studiile rusești.",
     steps: [
@@ -329,3 +329,34 @@ const ROUTES = {
 
 const SITES = ["abdomen stânga", "abdomen dreapta", "coapsă stângă", "coapsă dreaptă", "braț stâng", "braț drept"];
 const SYMPTOMS = ["usturime", "roșeață locală", "umflătură", "greață", "durere de cap", "amețeală", "somn bun", "somn prost", "energie", "oboseală", "anxietate", "palpitații"];
+
+
+/* Analize de sange: campuri urmarite (valori de referinta orientative pentru adult). */
+const LAB_FIELDS = [
+  { k: "hb", n: "Hemoglobină", u: "g/dl", lo: 13, hi: 17.5 },
+  { k: "wbc", n: "Leucocite", u: "×10³/µl", lo: 4, hi: 10 },
+  { k: "plt", n: "Trombocite", u: "×10³/µl", lo: 150, hi: 400 },
+  { k: "glu", n: "Glicemie à jeun", u: "mg/dl", lo: 70, hi: 99 },
+  { k: "hba1c", n: "HbA1c", u: "%", lo: 4, hi: 5.6 },
+  { k: "alt", n: "ALT (TGP)", u: "U/l", lo: 0, hi: 41 },
+  { k: "ast", n: "AST (TGO)", u: "U/l", lo: 0, hi: 40 },
+  { k: "crea", n: "Creatinină", u: "mg/dl", lo: 0.7, hi: 1.2 },
+  { k: "chol", n: "Colesterol total", u: "mg/dl", lo: 0, hi: 200 },
+  { k: "ldl", n: "LDL", u: "mg/dl", lo: 0, hi: 130 },
+  { k: "hdl", n: "HDL", u: "mg/dl", lo: 40, hi: 999 },
+  { k: "tg", n: "Trigliceride", u: "mg/dl", lo: 0, hi: 150 },
+  { k: "cu", n: "Cupru seric", u: "µg/dl", lo: 70, hi: 140 },
+  { k: "zn", n: "Zinc seric", u: "µg/dl", lo: 60, hi: 120 }
+];
+
+/* Harta corpului: coordonate pe silueta 200x420 (vedere din fata; stanga pacientului = dreapta imaginii). */
+const BODY_POINTS = {
+  "abdomen stânga": [118, 208], "abdomen dreapta": [82, 208],
+  "coapsă stângă": [112, 300], "coapsă dreaptă": [88, 300],
+  "braț stâng": [156, 172], "braț drept": [44, 172],
+  "deltoid stâng (max 2 ml)": [150, 128], "deltoid drept (max 2 ml)": [50, 128],
+  "fesier stâng (ventrogluteal)": [146, 238], "fesier drept (ventrogluteal)": [54, 238],
+  "coapsă stângă (vastus lateralis)": [132, 318], "coapsă dreaptă (vastus lateralis)": [68, 318]
+};
+const NEG_SYMPTOMS = ["usturime", "roșeață locală", "umflătură", "greață", "durere de cap", "amețeală", "somn prost", "oboseală", "anxietate", "palpitații"];
+const LOCAL_SYMPTOMS = ["usturime", "roșeață locală", "umflătură"];

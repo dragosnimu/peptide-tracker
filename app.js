@@ -24,7 +24,7 @@ const nowHM = () => { const d = new Date(); return pad(d.getHours()) + ":" + pad
 
 /* ---------- stare ---------- */
 const SK = "peptide-tracker-v1";
-const defaultState = () => ({ v: 1, settings: { am: "06:45", pm: "21:00", notif: false }, plan: {}, days: {}, vials: {}, log: [], notified: {} });
+const defaultState = () => ({ v: 1, settings: { am: "06:45", pm: "21:00", notif: false }, plan: {}, days: {}, vials: {}, log: [], notified: {}, labs: [] });
 let S = load();
 function load() { try { const s = JSON.parse(localStorage.getItem(SK)); if (s && s.v) return Object.assign(defaultState(), s); } catch (e) {} return defaultState(); }
 let saveTimer = null;
@@ -148,6 +148,8 @@ function alertsFor(k) {
     if (r === s.cycleOn) a.push(`<div class="alert info"><b>${esc(s.short)}: începe pauza de washout (${s.cycleOff / 7} săpt.)</b>Reia pe ${esc(fmtL(addDays(k, s.cycleOff)))}. Fiola deschisă va expira probabil între timp.</div>`);
     else if (r === 0) a.push(`<div class="alert info"><b>${esc(s.short)}: reia după pauză (ciclul ${Math.floor(di / per) + 1})</b>Verifică dacă fiola activă mai e în termen; altfel prepară una nouă.</div>`);
   }
+  const due = labsDue();
+  if (due) { const dl = diffDays(k, due.due); if (dl <= 7) a.push(`<div class="alert ${dl < 0 ? "" : "info"}"><b>Analize de sânge ${dl < 0 ? "restante de " + (-dl) + " zile" : dl === 0 ? "scadente azi" : "în " + dl + " zile (" + fmtL(due.due) + ")"}</b>${esc(due.why)}. Le înregistrezi în Jurnal → Analize.</div>`); }
   const news = allSubs().filter(s => s.from === k && !s.stopped);
   for (const s of news) a.push(`<div class="alert info"><b>Azi intră ${esc(s.short)}</b>${s.test ? "Prima doză este la jumătate, ca test de tolerabilitate. " : ""}${esc(s.cycle)}.</div>`);
   if (EVENTS[k]) a.push(`<div class="alert info"><b>${esc(fmtL(k))}</b>${esc(EVENTS[k])}</div>`);
@@ -159,6 +161,7 @@ function renderToday() {
   const w = weekOf(k);
   $("#title").textContent = "Azi";
   $("#subtitle").textContent = `${fmtFull(k)}${w >= 1 && w <= planWeeks() ? ` · săptămâna ${w} din ${planWeeks()}` : ""}`;
+  $("#topaction").innerHTML = ds.some(d => !d.logged && !d.skipped) ? `<button class="btn small primary" data-act="focus-open">Mod injecție</button>` : "";
   let h = alertsFor(k);
   if (!ds.length) h += `<div class="card"><h2>Nicio administrare azi</h2><p class="muted">${k < PLAN_START ? "Planul începe pe " + fmtL(PLAN_START) + "." : k > planEnd() ? "Planul s-a încheiat. Washout înainte de un al doilea ciclu." : "Zi liberă în calendar."}</p></div>`;
   else h += slotBlock(ds, k);
@@ -271,6 +274,164 @@ function vialSheet(id) {
   });
 }
 
+/* ---------- verificari de siguranta ---------- */
+function safetyWarnings(s, k, units, site, route, vial, isNew) {
+  const w = [];
+  const mg = units / 100 * conc(s, vial);
+  if (vial && diffDays(vial.opened, k) > s.stabilityDays) w.push(`Fiola #${vial.n} este expirată: ${diffDays(vial.opened, k)} zile de la reconstituire, limita e ${s.stabilityDays}. Prepară una nouă.`);
+  if (vial && vial.leftMg + 1e-9 < mg) w.push(`Fiola #${vial.n} mai are ${num(vial.leftMg)} mg, mai puțin decât doza de ${num(mg)} mg.`);
+  if (s.maxMg && mg > s.maxMg + 1e-9) w.push(`Doza ${doseLabel(s, mg)} depășește maximul din surse: ${doseLabel(s, s.maxMg)} = ${fmtU(unitsFor(s, s.maxMg, vial))}.`);
+  if (["dsip", "semax", "selank"].includes(s.id) && units > 20) w.push(`${s.short} se dozează în micrograme. ${fmtU(units)} înseamnă de ${Math.round(units / unitsFor(s, s.doseMg, vial))} ori doza standard. Oprește-te și verifică seringa.`);
+  const d = scheduled(s, k);
+  if (d && units > d.units * 1.5 + 1e-9) w.push(`Cu ${Math.round((units / d.units - 1) * 100)}% peste doza planificată de ${fmtU(d.units)}.`);
+  if (isNew && S.log.some(e => e.date === k && e.sub === s.id)) w.push(`${s.short} este deja înregistrat azi. A doua administrare ar dubla doza zilnică.`);
+  const rec = S.log.filter(e => e.site === site && diffDays(e.date, k) >= 0 && diffDays(e.date, k) < 3).sort((a, b) => b.date.localeCompare(a.date))[0];
+  if (rec) w.push(`Locul „${site}” a fost folosit ${diffDays(rec.date, k) === 0 ? "azi" : "acum " + diffDays(rec.date, k) + (diffDays(rec.date, k) === 1 ? " zi" : " zile")}. Rotește locul.`);
+  const lastLocal = S.log.filter(e => e.site === site && (e.symptoms || []).some(x => LOCAL_SYMPTOMS.includes(x)) && diffDays(e.date, k) < 7)[0];
+  if (lastLocal) w.push(`La „${site}” ai notat recent o reacție locală (${lastLocal.symptoms.filter(x => LOCAL_SYMPTOMS.includes(x)).join(", ")}). Alege alt loc.`);
+  if (route === "im" && units > 200 && String(site).startsWith("deltoid")) w.push("Peste 2 ml în deltoid: alege coapsa sau fesierul.");
+  if (route === "sc" && units > 150) w.push("Peste 1,5 ml subcutanat: volum mare pentru SC. Ia în calcul IM sau două injecții în locuri diferite.");
+  return w;
+}
+function warnBox(warns, idAck) {
+  return `<div class="alert warnbox"><b>Verifică înainte de a salva</b><ul style="margin:6px 0 0;padding-left:18px">${warns.map(x => `<li>${esc(x)}</li>`).join("")}</ul><label class="ack"><input type="checkbox" id="${idAck}"> Am verificat și vreau să salvez oricum</label></div>`;
+}
+
+/* ---------- grafic de evolutie ---------- */
+function chartSVG() {
+  const logs = S.log.filter(e => e.date);
+  if (!logs.length) return `<p class="muted">Graficul apare după primele administrări cu stare notată.</p>`;
+  const first = logs.reduce((m, e) => e.date < m ? e.date : m, todayKey());
+  const start = first < PLAN_START ? first : PLAN_START, end = addDays(todayKey(), 1);
+  const days = diffDays(start, end) + 1;
+  const cw = Math.max(16, Math.min(28, Math.floor(600 / days))), L = 34, T = 18, H = 150, B = 62;
+  const W = L + days * cw + 10, HT = T + H + B;
+  const x = k => L + diffDays(start, k) * cw + cw / 2, y = f => T + H - (f - 1) / 4 * H;
+  let g = "";
+  for (let f = 1; f <= 5; f++) g += `<line x1="${L}" x2="${W - 8}" y1="${y(f)}" y2="${y(f)}" stroke="var(--line-soft)"/><text x="${L - 6}" y="${y(f) + 4}" text-anchor="end" font-size="11" fill="var(--ink-3)">${f}</text>`;
+  const pts = []; let bars = "", labels = "";
+  for (let k = start, i = 0; k <= end; k = addDays(k, 1), i++) {
+    const es = logs.filter(e => e.date === k), fe = es.filter(e => e.feel > 0);
+    if (fe.length) pts.push({ k, f: fe.reduce((a, e) => a + e.feel, 0) / fe.length });
+    const neg = new Set(); es.forEach(e => (e.symptoms || []).forEach(sy => { if (NEG_SYMPTOMS.includes(sy)) neg.add(sy); }));
+    if (neg.size) bars += `<rect x="${x(k) - cw / 2 + 2}" y="${T + H + 6}" width="${cw - 4}" height="${Math.min(5, neg.size) * 5}" rx="1" fill="var(--warn)" opacity=".6"><title>${esc([...neg].join(", "))}</title></rect>`;
+    const dd = fromKey(k);
+    if (dd.getDay() === 1 || i === 0) labels += `<text x="${x(k)}" y="${HT - 30}" text-anchor="middle" font-size="10" fill="var(--ink-3)">${fmt(k)}</text>`;
+    if (k === todayKey()) g += `<rect x="${x(k) - cw / 2}" y="${T}" width="${cw}" height="${H}" fill="var(--accent-soft)"/>`;
+  }
+  let intro = "";
+  for (const sb of allSubs()) if (!sb.stopped && sb.from >= start && sb.from <= end) intro += `<line x1="${x(sb.from)}" x2="${x(sb.from)}" y1="${T}" y2="${T + H}" stroke="var(--accent)" stroke-dasharray="3 3"/><text x="${x(sb.from) + 3}" y="${T + 10}" font-size="9.5" fill="var(--accent)" transform="rotate(90 ${x(sb.from) + 3} ${T + 10})">${esc(sb.short)}</text>`;
+  let line = "";
+  if (pts.length > 1) line = `<polyline points="${pts.map(p => x(p.k) + "," + y(p.f)).join(" ")}" fill="none" stroke="var(--ink-2)" stroke-width="1.5"/>`;
+  const dots = pts.map(p => `<circle cx="${x(p.k)}" cy="${y(p.f)}" r="4.5" fill="${p.f < 2.5 ? "var(--warn)" : p.f < 3.5 ? "var(--am)" : "var(--ok)"}"><title>${fmtL(p.k)}: ${num(p.f)}/5</title></circle>`).join("");
+  return `<div class="chart"><svg viewBox="0 0 ${W} ${HT}" width="${W}" height="${HT}">${g}${intro}${line}${dots}${bars}${labels}<text x="${L}" y="${HT - 8}" font-size="10.5" fill="var(--ink-3)">● stare 1-5 (medie/zi) · bare roșii = simptome negative · linii punctate = substanță nouă</text></svg></div>`;
+}
+
+/* ---------- harta corpului ---------- */
+function siteInfo(site) {
+  const es = S.log.filter(e => e.site === site).sort((a, b) => (b.date + (b.time || "")).localeCompare(a.date + (a.time || "")));
+  if (!es.length) return { days: null, react: false };
+  const last = es[0];
+  return { days: diffDays(last.date, todayKey()), react: (last.symptoms || []).some(x => LOCAL_SYMPTOMS.includes(x)), last };
+}
+function bodySVG(sel, pick) {
+  const body = `<g fill="var(--surface-2)" stroke="var(--line)" stroke-width="1.2"><circle cx="100" cy="42" r="24"/><rect x="62" y="70" width="76" height="120" rx="22"/><rect x="66" y="185" width="68" height="70" rx="18"/><rect x="34" y="82" width="24" height="112" rx="12"/><rect x="142" y="82" width="24" height="112" rx="12"/><rect x="66" y="250" width="30" height="150" rx="14"/><rect x="104" y="250" width="30" height="150" rx="14"/></g>`;
+  let pts = "";
+  for (const [site, [px, py]] of Object.entries(BODY_POINTS)) {
+    const inf = siteInfo(site);
+    const col = inf.days === null ? "var(--line)" : inf.days < 3 ? "var(--warn)" : inf.days < 7 ? "var(--am)" : "var(--ok)";
+    const im = !ROUTES.sc.sites.includes(site);
+    pts += `<g class="pt ${sel === site ? "sel" : ""}" ${pick ? `data-act="pick-site" data-site="${esc(site)}"` : ""}><title>${esc(site)}: ${inf.days === null ? "nefolosit" : inf.days === 0 ? "folosit azi" : "acum " + inf.days + " zile"}${inf.react ? " · reacție locală" : ""}</title>${inf.react ? `<circle cx="${px}" cy="${py}" r="11" fill="none" stroke="var(--warn)" stroke-width="2"/>` : ""}<circle class="c" cx="${px}" cy="${py}" r="${im ? 6 : 7}" fill="${col}"/>${im ? `<text x="${px}" y="${py + 3}" text-anchor="middle" font-size="7.5" fill="#fff" pointer-events="none">IM</text>` : ""}</g>`;
+  }
+  return `<svg viewBox="0 0 200 420" role="img" aria-label="Harta locurilor de injecție">${body}${pts}</svg>`;
+}
+function bodyLegend() {
+  const rows = Object.keys(BODY_POINTS).map(site => { const i = siteInfo(site); return { site, i }; }).filter(r => r.i.days !== null).sort((a, b) => a.i.days - b.i.days).slice(0, 6);
+  return `<div class="lg"><div><i style="background:var(--warn)"></i>folosit în ultimele 3 zile</div><div><i style="background:var(--am)"></i>acum 3-6 zile</div><div><i style="background:var(--ok)"></i>peste 7 zile, disponibil</div><div><i style="background:var(--line)"></i>nefolosit</div><div>inel roșu = reacție locală notată</div>${rows.length ? `<div style="margin-top:6px"><b>Recente:</b><br>${rows.map(r => `${esc(r.site)}: ${r.i.days === 0 ? "azi" : "acum " + r.i.days + " zile"}${r.i.react ? " ⚠" : ""}`).join("<br>")}</div>` : ""}</div>`;
+}
+
+/* ---------- analize de sange ---------- */
+function ghkCycleEnds() {
+  const g = sub("ghk"); const ends = [];
+  if (g.stopped) return ends;
+  if (g.cycleOn > 0 && g.cycleOff > 0) { for (let c = 0; c < 20; c++) { const e = addDays(g.from, c * (g.cycleOn + g.cycleOff) + g.cycleOn - 1); if (e >= g.to) { ends.push(g.to); break; } ends.push(e); } }
+  else ends.push(g.to);
+  return ends;
+}
+function labsDue() {
+  const last = S.labs.slice().sort((a, b) => b.date.localeCompare(a.date))[0];
+  const items = [];
+  if (!last) items.push({ due: PLAN_START, why: "analize de referință înainte de start: hemoleucogramă, glicemie, HbA1c, transaminaze, creatinină, lipide, cupru și zinc" });
+  else items.push({ due: addDays(last.date, 84), why: "control la 12 săptămâni de la ultimele analize" });
+  for (const e of ghkCycleEnds()) if (!last || e > last.date) items.push({ due: e, why: "sfârșit de ciclu GHK-Cu: cupru și zinc seric" });
+  items.sort((a, b) => a.due.localeCompare(b.due));
+  return items[0] || null;
+}
+function labsCard() {
+  const labs = S.labs.slice().sort((a, b) => b.date.localeCompare(a.date));
+  const due = labsDue();
+  let h = `<div class="card labs stack"><div class="row between"><h2 style="margin:0">Analize de sânge</h2><button class="btn small primary" data-act="labs-new">Adaugă analize</button></div>`;
+  if (due) { const dl = diffDays(todayKey(), due.due); h += `<div class="alert ${dl < 0 ? "" : "info"}"><b>${dl < 0 ? "Restante de " + (-dl) + " zile" : dl === 0 ? "Scadente azi" : "Următoarele: " + fmtL(due.due) + " (în " + dl + " zile)"}</b>${esc(due.why)}.</div>`; }
+  if (!labs.length) return h + `<p class="muted">Nicio analiză înregistrată. Raportul recomandă un set de referință înainte de prima injecție și repetare la 8-12 săptămâni.</p></div>`;
+  const cur = labs[0], prev = labs[1];
+  let rows = "";
+  for (const f of LAB_FIELDS) {
+    const v = cur.v[f.k]; if (v == null || v === "") continue;
+    const p = prev ? prev.v[f.k] : null;
+    const out = f.lo != null && (v < f.lo || v > f.hi);
+    const arrow = p == null || p === "" ? "" : v > p ? "↑" : v < p ? "↓" : "=";
+    rows += `<tr><td>${esc(f.n)} <span class="tiny">${esc(f.u)}</span></td><td class="v ${out ? "out" : ""}">${num(v)}</td><td class="arrow">${p == null || p === "" ? "" : arrow + " " + num(p)}</td><td class="tiny">${f.lo != null ? num(f.lo) + "–" + (f.hi > 900 ? "" : num(f.hi)) : ""}</td></tr>`;
+  }
+  h += `<div class="tiny">Ultimele: ${fmtL(cur.date)} ${fromKey(cur.date).getFullYear()}${prev ? " · comparate cu " + fmtL(prev.date) : ""}. Roșu = în afara intervalului orientativ.</div>
+    <div style="overflow-x:auto"><table><thead><tr><th>Analiză</th><th>Valoare</th><th>Anterior</th><th>Interval</th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${cur.note ? `<div class="m tiny">${esc(cur.note)}</div>` : ""}
+    <div class="row wrap">${labs.map(l => `<button class="btn small" data-act="labs-edit" data-lid="${l.id}">${fmtL(l.date)} ${fromKey(l.date).getFullYear()}</button>`).join("")}</div></div>`;
+  return h;
+}
+function labsSheet(entry) {
+  const e = entry || { id: Date.now(), date: todayKey(), v: {}, note: "" };
+  openSheet(`<h2>${entry ? "Analize din " + fmtL(e.date) : "Analize noi"}</h2>
+    <p class="muted">Completează doar ce ai. Valorile se compară automat cu setul anterior și cu intervalul orientativ.</p>
+    <div class="stack">
+      <label class="f">Data recoltării<input type="date" id="lb-date" value="${e.date}"></label>
+      <div class="stack" style="grid-template-columns:1fr 1fr;display:grid">${LAB_FIELDS.map(f => `<label class="f">${esc(f.n)} <span class="tiny">(${esc(f.u)})</span><input type="number" step="any" inputmode="decimal" data-lk="${f.k}" value="${e.v[f.k] ?? ""}"></label>`).join("")}</div>
+      <label class="f">Observații (laborator, medic, context)<textarea id="lb-note">${esc(e.note)}</textarea></label>
+    </div>
+    <div class="row"><button class="btn primary grow" data-act="labs-save" data-lid="${e.id}" data-new="${entry ? "" : "1"}">Salvează</button>${entry ? `<button class="btn danger" data-act="labs-delete" data-lid="${e.id}">Șterge</button>` : ""}<button class="btn" data-act="close">Anulează</button></div>`);
+}
+
+/* ---------- mod injectie ---------- */
+let focusIdx = 0;
+function focusPending() { const k = todayKey(); const ds = dosesOn(k).filter(d => !d.logged && !d.skipped); return ds.filter(d => d.sub.time === "am").concat(ds.filter(d => d.sub.time === "pm")); }
+function renderFocus() {
+  const k = todayKey(), pend = focusPending();
+  $("#title").textContent = "Mod injecție";
+  $("#subtitle").textContent = fmtFull(k);
+  $("#topaction").innerHTML = `<button class="btn small" data-act="focus-exit">Ieși</button>`;
+  if (!pend.length) { main.innerHTML = `<div class="view focus"><div class="card"><div class="big">Nimic de administrat</div><p class="muted" style="font-size:18px">Toate dozele de azi sunt bifate sau sărite.</p></div><button class="btn block" data-act="focus-exit">Înapoi la Azi</button></div>`; return; }
+  focusIdx = Math.max(0, Math.min(focusIdx, pend.length - 1));
+  const d = pend[focusIdx], s = d.sub, r = routeOf(s), site = suggestSite(s.routeKey, d.units / 100), v = d.vial;
+  const warns = safetyWarnings(s, k, d.units, site, s.routeKey, v, true);
+  let vl = "";
+  if (!v) vl = `<div class="alert"><b>Nu ai fiolă activă pentru ${esc(s.short)}</b>Prepară fiola din ecranul Fiole înainte de injecție.</div>`;
+  else vl = `<p class="muted" style="font-size:16px">Fiola #${v.n} · ${vialDosesLeft(s, v)} doze rămase · expiră ${fmt(vialExpiry(s, v))}</p>`;
+  main.innerHTML = `<div class="view focus">
+    <div class="prog">${focusIdx + 1} din ${pend.length} · <span class="chip ${s.time}">${tl(s.time)}</span> <span class="chip">${esc(s.route)}</span></div>
+    <div class="card stack">
+      <div class="big">${esc(s.name)}</div>
+      <div class="units">${fmtU(d.units)}</div>
+      <div class="lbl">${esc(d.label)}${d.units > 100 ? ` = ${num(d.units / 100)} ml` : ""} · ${esc(r.name)}</div>
+      ${d.note ? `<div class="alert"><b>${esc(d.note)}</b></div>` : ""}
+      <div class="site">Loc sugerat: <b>${esc(site)}</b></div>
+      ${vl}
+      ${warns.length ? warnBox(warns, "f-ack") : ""}
+    </div>
+    <button class="btn primary block" data-act="focus-log" data-id="${s.id}" data-site="${esc(site)}">Administrat: ${fmtU(d.units)} ${esc(s.short)}</button>
+    <div class="row"><button class="btn grow" data-act="focus-skip" data-id="${s.id}">Sari azi</button><button class="btn grow" data-act="focus-next" ${pend.length < 2 ? "disabled" : ""}>Următoarea →</button></div>
+    <p class="tiny" style="text-align:center">Se înregistrează cu locul sugerat și fără stare; completezi starea și comentariul din Jurnal.</p>
+  </div>`;
+}
+
 /* ---------- ecran Jurnal ---------- */
 let logFilter = "";
 function renderLog() {
@@ -280,7 +441,10 @@ function renderLog() {
   const avg = last7.length ? (last7.reduce((a, e) => a + e.feel, 0) / last7.length) : null;
   $("#subtitle").textContent = `${S.log.length} administrări înregistrate${avg ? ` · stare medie 7 zile: ${num(avg)}/5` : ""}`;
   const list = entries.filter(e => !logFilter || e.sub === logFilter);
-  let h = `<div class="card flat"><label class="f">Filtrează<select id="log-filter"><option value="">Toate substanțele</option>${SUBS.map(s => `<option value="${s.id}" ${logFilter === s.id ? "selected" : ""}>${esc(s.short)}</option>`).join("")}</select></label></div>`;
+  let h = `<div class="card"><h2>Evoluție</h2>${chartSVG()}</div>
+  <div class="card"><h2>Locuri de injecție</h2><div class="bodywrap">${bodySVG(null, false)}${bodyLegend()}</div></div>
+  ${labsCard()}
+  <div class="card flat"><label class="f">Filtrează<select id="log-filter"><option value="">Toate substanțele</option>${SUBS.map(s => `<option value="${s.id}" ${logFilter === s.id ? "selected" : ""}>${esc(s.short)}</option>`).join("")}</select></label></div>`;
   h += `<div class="card">${list.length ? list.map(e => {
     const s = sub(e.sub);
     return `<div class="entry"><div class="h"><span>${esc(s.short)} · ${esc(e.label)} = ${fmtU(e.units)}${e.planned && Math.abs(e.units - e.planned.units) > 0.01 ? ` <span class="chip warn">planificat ${fmtU(e.planned.units)}</span>` : ""}</span><span>${fmtL(e.date)} ${esc(e.time || "")}</span></div>
@@ -314,6 +478,8 @@ function logSheet(id, k, entry) {
       <label class="f">Ora<input type="time" id="l-time" value="${esc(e.time)}"></label>
       <label class="f">Calea de administrare<select id="l-route"><option value="sc" ${rk0 === "sc" ? "selected" : ""}>Subcutanat (SC)</option><option value="im" ${rk0 === "im" ? "selected" : ""}>Intramuscular (IM)</option></select></label>
       <label class="f">Locul injecției<select id="l-site">${ROUTES[rk0].sites.map(x => `<option ${x === e.site ? "selected" : ""}>${x}</option>`).join("")}</select></label>
+      <div class="bodywrap" id="l-body">${bodySVG(e.site, true)}<div class="lg"><b>Apasă un punct ca să alegi locul.</b><br>roșu = ultimele 3 zile, portocaliu = 3-6 zile, verde = liber, inel = reacție locală.</div></div>
+      <div id="l-warn"></div>
       <details><summary class="tiny" style="cursor:pointer">Procedura pas cu pas (${ROUTES[rk0].label})</summary><ol class="steps" id="l-proc" style="font-size:13.5px;margin-top:6px">${ROUTES[rk0].steps.map(x => `<li>${esc(x)}</li>`).join("")}</ol><p class="tiny" id="l-needle">${esc(ROUTES[rk0].needle)}</p></details>
       <div><div class="tiny" style="margin-bottom:4px">Cum te simți (1 = rău, 5 = foarte bine)</div><div class="scale" id="l-feel">${[1, 2, 3, 4, 5].map(i => `<button type="button" class="${e.feel === i ? "on" : ""}" data-f="${i}">${i}</button>`).join("")}</div><div class="scale-l"><span>rău</span><span>foarte bine</span></div></div>
       <div><div class="tiny" style="margin-bottom:6px">Simptome / observații</div><div class="chips" id="l-sym">${SYMPTOMS.map(x => `<button type="button" class="tog ${(e.symptoms || []).includes(x) ? "on" : ""}" data-s="${esc(x)}">${esc(x)}</button>`).join("")}</div></div>
@@ -330,6 +496,7 @@ function logSheet(id, k, entry) {
       host.querySelector("#l-calc").innerHTML = `<b>${fmtU(u)} = ${esc(doseLabel(s, mg))}</b>${diff ? `<span style="color:var(--warn)">Diferit de doza recomandată (${fmtU(planned.units)}): ${u > planned.units ? "+" : "−"}${num(Math.abs(u - planned.units))} U</span>` : "Doza recomandată."}${u > 100 ? `<br><span style="color:var(--warn)">Peste o seringă de 1 ml.</span>` : ""}`;
     };
     host.querySelector("#l-units").addEventListener("input", calc); calc();
+    host.querySelector("#l-site").addEventListener("change", ev => { host.querySelector("#l-body").innerHTML = bodySVG(ev.target.value, true) + host.querySelector("#l-body .lg").outerHTML; });
     host.querySelector("#l-route").addEventListener("change", ev => {
       const r = ROUTES[ev.target.value]; const sel = host.querySelector("#l-site"); const cur = sel.value;
       sel.innerHTML = r.sites.map(x => `<option ${x === cur ? "selected" : ""}>${x}</option>`).join("");
@@ -537,6 +704,13 @@ const A = {
   "log-save": d => {
     const host = $("#sheet"), dr = host.__draft;
     const time = host.querySelector("#l-time").value, site = host.querySelector("#l-site").value, comment = host.querySelector("#l-comment").value.trim(), route = host.querySelector("#l-route").value;
+    {
+      const s0 = sub(d.id); const e0 = d.new ? null : S.log.find(x => x.id === +d.eid);
+      const v0 = d.new ? activeVial(d.id) : ((S.vials[d.id] || []).find(x => x.n === (e0 && e0.vial)) || null);
+      const warns = safetyWarnings(s0, d.k, dr.units, site, route, v0, !!d.new).filter(x => d.new || !/deja înregistrat/.test(x));
+      const ack = host.querySelector("#l-ack");
+      if (warns.length && !(ack && ack.checked)) { host.querySelector("#l-warn").innerHTML = warnBox(warns, "l-ack"); host.querySelector("#l-warn").scrollIntoView({ block: "center" }); toast("Verifică avertizările"); return; }
+    }
     if (d.new) {
       const s = sub(d.id), v = activeVial(d.id);
       if (!(dr.units > 0)) return toast("Introdu unitățile administrate");
@@ -569,6 +743,30 @@ const A = {
   "dose-edit": d => doseSheet(d.id, d.k),
   "dose-save": d => { const s = sub(d.id); const mg = toMg(s, parseFloat($("#d-dose").value) || 0); if (mg <= 0) return toast("Doză invalidă"); S.days[d.k + "|" + d.id] = Object.assign(S.days[d.k + "|" + d.id] || {}, { mg }); save(); closeSheet(); render(); },
   "dose-reset": d => { const o = S.days[d.k + "|" + d.id]; if (o) { delete o.mg; if (!Object.keys(o).length) delete S.days[d.k + "|" + d.id]; } save(); closeSheet(); render(); },
+  "pick-site": (d, el) => { const host = $("#sheet"); const sel = host && host.querySelector("#l-site"); if (!sel) return; if (![...sel.options].some(o => o.value === d.site)) { const rs = host.querySelector("#l-route"); rs.value = ROUTES.im.sites.includes(d.site) ? "im" : "sc"; rs.dispatchEvent(new Event("change")); } sel.value = d.site; sel.dispatchEvent(new Event("change")); },
+  "labs-new": () => labsSheet(null),
+  "labs-edit": d => { const e = S.labs.find(x => x.id === +d.lid); if (e) labsSheet(e); },
+  "labs-save": d => {
+    const host = $("#sheet"); const date = host.querySelector("#lb-date").value; if (!date) return toast("Pune data recoltării");
+    const v = {}; host.querySelectorAll("[data-lk]").forEach(i => { const x = parseFloat(i.value); if (!isNaN(x)) v[i.dataset.lk] = x; });
+    if (!Object.keys(v).length) return toast("Completează cel puțin o valoare");
+    const note = host.querySelector("#lb-note").value.trim();
+    if (d.new) S.labs.push({ id: +d.lid, date, v, note }); else Object.assign(S.labs.find(x => x.id === +d.lid), { date, v, note });
+    save(); closeSheet(); toast("Analize salvate"); render();
+  },
+  "labs-delete": d => { const i = S.labs.findIndex(x => x.id === +d.lid); if (i >= 0 && confirm("Ștergi acest set de analize?")) { S.labs.splice(i, 1); save(); closeSheet(); render(); } },
+  "focus-open": () => { view = "focus"; focusIdx = 0; render(); window.scrollTo(0, 0); },
+  "focus-exit": () => { view = "today"; render(); },
+  "focus-next": () => { focusIdx = (focusIdx + 1) % Math.max(1, focusPending().length); render(); },
+  "focus-skip": d => { const k = todayKey(); S.days[k + "|" + d.id] = Object.assign(S.days[k + "|" + d.id] || {}, { skip: true }); save(); render(); },
+  "focus-log": d => {
+    const k = todayKey(), s = sub(d.id), dd = scheduled(s, k); if (!dd) return;
+    const ack = $("#f-ack"); if (ack && !ack.checked) { toast("Bifează confirmarea de sub avertizări"); ack.scrollIntoView({ block: "center" }); return; }
+    const v = activeVial(d.id);
+    S.log.push({ id: Date.now(), date: k, time: nowHM(), sub: d.id, mg: dd.mg, units: dd.units, label: dd.label, site: d.site, feel: 0, symptoms: [], comment: "", vial: v ? v.n : null, planned: { mg: dd.mg, units: dd.units, label: dd.label }, route: s.routeKey || "sc" });
+    if (v) v.leftMg = Math.max(0, Math.round((v.leftMg - dd.mg) * 1000) / 1000);
+    save(); toast(`${s.short} înregistrat: ${fmtU(dd.units)}, ${d.site}`); focusIdx = 0; render(); window.scrollTo(0, 0);
+  },
   "plan-edit": d => planSheet(d.id),
   "route-edit": d => routeSheet(d.id),
   "route-save": d => {
@@ -630,8 +828,9 @@ $("#nav").addEventListener("click", e => { const b = e.target.closest("button[da
 
 /* ---------- randare ---------- */
 function render() {
-  document.querySelectorAll("#nav button").forEach(b => b.classList.toggle("on", b.dataset.v === view));
-  ({ today: renderToday, cal: renderCal, vials: renderVials, log: renderLog, settings: renderSettings })[view]();
+  document.querySelectorAll("#nav button").forEach(b => b.classList.toggle("on", b.dataset.v === view || (view === "focus" && b.dataset.v === "today")));
+  $("#topaction").innerHTML = "";
+  ({ today: renderToday, cal: renderCal, vials: renderVials, log: renderLog, settings: renderSettings, focus: renderFocus })[view]();
   const pending = dosesOn(todayKey()).filter(d => !d.logged && !d.skipped).length;
   const nb = $("#nav button[data-v=today]"); let badge = nb.querySelector(".badge");
   if (pending) { if (!badge) { badge = document.createElement("span"); badge.className = "badge"; nb.appendChild(badge); } badge.textContent = pending; } else if (badge) badge.remove();
@@ -655,6 +854,7 @@ if ("serviceWorker" in navigator) {
   let refreshed = false;
   navigator.serviceWorker.addEventListener("controllerchange", () => { if (updateReady && !refreshed) { refreshed = true; location.reload(); } });
 }
+if (new URLSearchParams(location.search).get("mode") === "inject") view = "focus";
 render();
 checkDueNow(); scheduleUpcoming();
 setInterval(checkDueNow, 60 * 1000);
