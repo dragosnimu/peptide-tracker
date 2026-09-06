@@ -1,7 +1,7 @@
 /* Datele planului: substantele din comanda MKM (august 2026), dozele standard din fisa
    furnizorului si avertismentele din raportul de analiza. Tot ce e aici poate fi
    suprascris din aplicatie (Calendar -> Editeaza planul). */
-const APP_VERSION = "2.0";
+const APP_VERSION = "2.1";
 const APP_DATE = "2026-09-05";
 const PLAN_START = "2026-09-05";
 const PLAN_WEEKS = 16;
@@ -360,3 +360,13 @@ const BODY_POINTS = {
 };
 const NEG_SYMPTOMS = ["usturime", "roșeață locală", "umflătură", "greață", "durere de cap", "amețeală", "somn prost", "oboseală", "anxietate", "palpitații"];
 const LOCAL_SYMPTOMS = ["usturime", "roșeață locală", "umflătură"];
+
+
+/* Consumabile urmarite (cheie, nume, unitate). */
+const SUPPLY_ITEMS = [
+  { k: "s03", n: "Seringi 0,3 ml (U-100)", u: "buc", hint: "doze sub 30 U: DSIP, Semax, Selank, BB10, NAD+ titrare, GHK-Cu" },
+  { k: "s1", n: "Seringi 1 ml (U-100)", u: "buc", hint: "doze de 30-100 U: SHB, SS-31, MOTS-c, Epithalon, Pinealon, Glutation SC, NAD+" },
+  { k: "s3", n: "Seringi 3 ml + ace IM", u: "buc", hint: "doze peste 1 ml sau intramusculare" },
+  { k: "waterMl", n: "Apă bacteriostatică", u: "ml", hint: "flacoane de 10 ml; reconstituire fiole" },
+  { k: "swabs", n: "Tampoane cu alcool", u: "buc", hint: "2 per injecție + 1 per fiolă preparată" }
+];

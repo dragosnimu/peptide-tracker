@@ -185,6 +185,35 @@ nav button .badge{position:absolute;margin-left:22px;margin-top:-4px;background:
 .focus .warnbox{font-size:15px}
 .ack{display:flex;gap:10px;align-items:flex-start;font-size:15px;padding:8px 0}
 .ack input{width:22px;height:22px;accent-color:var(--warn);flex:none;margin-top:1px}
+
+/* v2.1: raport tiparibil, consumabile, sincronizare */
+#printview{display:none;position:fixed;inset:0;overflow:auto;background:#fff;color:#111;z-index:40;padding:16px 18px 40px;font-size:13px;line-height:1.4}
+#printview.on{display:block}
+#printview .pv-bar{position:sticky;top:0;background:#fff;padding:8px 0 10px;border-bottom:1px solid #ccc;margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap}
+#printview .pv-bar .btn{background:#fff;color:#111;border-color:#888}
+#printview .pv-bar .btn.primary{background:#0F6E8C;color:#fff;border-color:#0F6E8C}
+#printview h1{font-size:20px;margin:0 0 4px}
+#printview h2{font-size:15px;margin:18px 0 6px;border-bottom:1px solid #ddd;padding-bottom:3px}
+#printview table{border-collapse:collapse;width:100%;font-size:12px}
+#printview th,#printview td{border:1px solid #ccc;padding:4px 6px;text-align:left;vertical-align:top}
+#printview th{background:#f0f0f0}
+#printview .small{font-size:11.5px;color:#444}
+#printview .box{border:1px solid #bbb;padding:8px 10px;margin:8px 0;background:#fafafa}
+@media print{
+  body{background:#fff !important;color:#000;padding:0}
+  .topbar,nav,main,#sheet,.toast,#updbar{display:none !important}
+  #printview{display:block !important;position:static;overflow:visible;padding:0}
+  #printview .pv-bar{display:none}
+  #printview tr{page-break-inside:avoid}
+}
+.sup table{width:100%;border-collapse:collapse;font-size:13px}
+.sup th{text-align:left;font-weight:600;color:var(--ink-3);font-size:11.5px;padding:4px 6px;border-bottom:1px solid var(--line-soft)}
+.sup td{padding:5px 6px;border-bottom:1px solid var(--line-soft);font-variant-numeric:tabular-nums}
+.sup td.n{font-family:var(--mono);font-weight:600}
+.sup td.low{color:var(--warn);font-weight:600}
+.sync-status{font-size:13px;color:var(--ink-2)}
+.sync-status b{color:var(--ok)}
+.sync-status b.err{color:var(--warn)}
 </style>
 </head>
 <body>
@@ -201,6 +230,7 @@ nav button .badge{position:absolute;margin-left:22px;margin-top:-4px;background:
   <button data-v="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Setări</button>
 </nav>
 <div id="sheet"></div>
+<div id="printview"></div>
 <script src="data.js"></script>
 <script src="app.js"></script>
 </body>

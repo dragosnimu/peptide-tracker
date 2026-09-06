@@ -24,13 +24,15 @@ const nowHM = () => { const d = new Date(); return pad(d.getHours()) + ":" + pad
 
 /* ---------- stare ---------- */
 const SK = "peptide-tracker-v1";
-const defaultState = () => ({ v: 1, settings: { am: "06:45", pm: "21:00", notif: false }, plan: {}, days: {}, vials: {}, log: [], notified: {}, labs: [] });
+const defaultState = () => ({ v: 1, settings: { am: "06:45", pm: "21:00", notif: false }, plan: {}, days: {}, vials: {}, log: [], notified: {}, labs: [], supplies: { s03: null, s1: null, s3: null, waterMl: null, swabs: null, updated: null }, sync: { token: "", repo: "dragosnimu/peptide-tracker", branch: "data", path: "peptide-backup.json", lastSync: 0, lastError: "" }, meta: { updatedAt: 0 } });
 let S = load();
 function load() { try { const s = JSON.parse(localStorage.getItem(SK)); if (s && s.v) return Object.assign(defaultState(), s); } catch (e) {} return defaultState(); }
 let saveTimer = null;
-function save() {
+function save(noTouch) {
+  if (!noTouch) S.meta.updatedAt = Date.now();
   try { localStorage.setItem(SK, JSON.stringify(S)); } catch (e) { toast("Nu am putut salva datele"); }
   clearTimeout(saveTimer); saveTimer = setTimeout(scheduleUpcoming, 300);
+  if (!noTouch) schedulePush();
 }
 
 /* ---------- plan ---------- */
@@ -148,6 +150,7 @@ function alertsFor(k) {
     if (r === s.cycleOn) a.push(`<div class="alert info"><b>${esc(s.short)}: începe pauza de washout (${s.cycleOff / 7} săpt.)</b>Reia pe ${esc(fmtL(addDays(k, s.cycleOff)))}. Fiola deschisă va expira probabil între timp.</div>`);
     else if (r === 0) a.push(`<div class="alert info"><b>${esc(s.short)}: reia după pauză (ciclul ${Math.floor(di / per) + 1})</b>Verifică dacă fiola activă mai e în termen; altfel prepară una nouă.</div>`);
   }
+  a.push(...suppliesAlerts(k));
   const due = labsDue();
   if (due) { const dl = diffDays(k, due.due); if (dl <= 7) a.push(`<div class="alert ${dl < 0 ? "" : "info"}"><b>Analize de sânge ${dl < 0 ? "restante de " + (-dl) + " zile" : dl === 0 ? "scadente azi" : "în " + dl + " zile (" + fmtL(due.due) + ")"}</b>${esc(due.why)}. Le înregistrezi în Jurnal → Analize.</div>`); }
   const news = allSubs().filter(s => s.from === k && !s.stopped);
@@ -240,7 +243,7 @@ function renderVials() {
       ${vs.length > 1 ? `<details><summary class="tiny">Istoric fiole (${vs.length})</summary><div class="tiny">${vs.map(x => `#${x.n}: ${fmtL(x.opened)}${x.discarded ? ", aruncată" : ""}, ${num(x.leftMg)} mg rămase`).join("<br>")}</div></details>` : ""}
     </div>`;
   }
-  main.innerHTML = `<div class="view">${h}</div>`;
+  main.innerHTML = `<div class="view">${suppliesCard()}${h}</div>`;
 }
 function vialSheet(id) {
   const s = sub(id), v = activeVial(id);
@@ -432,6 +435,179 @@ function renderFocus() {
   </div>`;
 }
 
+/* ---------- consumabile ---------- */
+function syringeType(units, route) { if (route === "im" || units > 100) return "s3"; if (units <= 30) return "s03"; return "s1"; }
+function supplyForecast() {
+  const start = todayKey(), end = planEnd();
+  const need = { s03: 0, s1: 0, s3: 0, waterMl: 0, swabs: 0 };
+  const perSub = {};
+  const runsOut = {};
+  const st = S.supplies || {};
+  const vs = {};
+  for (const sb of allSubs()) { const v = activeVial(sb.id); vs[sb.id] = v ? { opened: v.opened, left: v.leftMg } : null; perSub[sb.id] = { vials: 0, used: (S.vials[sb.id] || []).length, stock: sb.stock, short: sb.short }; }
+  for (let k = start; k <= end; k = addDays(k, 1)) {
+    for (const dd of dosesOn(k)) {
+      if (dd.skipped || (dd.logged && k === start)) continue;
+      const sb = dd.sub; const rk = sb.routeKey || "sc";
+      need[syringeType(dd.units, rk)]++; if (rk === "im" || dd.units > 100) need.swabs += 0; need.swabs += 2;
+      let v = vs[sb.id];
+      if (!v || diffDays(v.opened, k) > sb.stabilityDays || v.left + 1e-9 < dd.mg) { v = vs[sb.id] = { opened: k, left: sb.vialMg }; perSub[sb.id].vials++; if (!sb.ready) need.waterMl += sb.waterMl; need.swabs += 1; }
+      v.left -= dd.mg;
+    }
+    for (const key of Object.keys(need)) if (runsOut[key] === undefined && st[key] != null && need[key] > st[key]) runsOut[key] = k;
+  }
+  return { need, runsOut, perSub, end };
+}
+function suppliesCard() {
+  const f = supplyForecast(), st = S.supplies || {};
+  const rows = SUPPLY_ITEMS.map(it => {
+    const have = st[it.k], nd = Math.ceil(f.need[it.k]);
+    const ro = f.runsOut[it.k];
+    const status = have == null ? `<span class="tiny">stoc necunoscut</span>` : ro ? `<span class="low">ajunge până pe ${fmt(ro)}</span>` : `<span style="color:var(--ok)">ajunge până la sfârșit</span>`;
+    return `<tr><td>${esc(it.n)}<br><span class="tiny">${esc(it.hint)}</span></td><td class="n">${have == null ? "–" : num(have)}</td><td class="n">${nd}${it.k === "waterMl" ? ` <span class="tiny">(${Math.ceil(nd / 10)} fl.)</span>` : ""}</td><td class="${ro ? "low" : ""}">${status}</td></tr>`;
+  }).join("");
+  const vialsShort = Object.values(f.perSub).filter(p => p.used + p.vials > p.stock).map(p => `${p.short}: mai trebuie ${p.used + p.vials - p.stock} fiole`);
+  return `<div class="card sup stack"><div class="row between"><h2 style="margin:0">Consumabile</h2><button class="btn small primary" data-act="supplies-edit">Actualizează stocul</button></div>
+    <p class="tiny">Necesar calculat din calendar, de azi până pe ${fmt(f.end)} ${fromKey(f.end).getFullYear()}, inclusiv fiolele care vor fi preparate${st.updated ? " · stoc introdus " + fmtL(st.updated) : ""}.</p>
+    <div style="overflow-x:auto"><table><thead><tr><th>Articol</th><th>Stoc</th><th>Necesar</th><th>Stare</th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${vialsShort.length ? `<div class="alert"><b>Fiole insuficiente</b>${esc(vialsShort.join("; "))}.</div>` : `<p class="tiny">Fiolele de substanțe ajung pentru tot planul.</p>`}</div>`;
+}
+function suppliesSheet() {
+  const st = S.supplies || {};
+  openSheet(`<h2>Stocul de consumabile</h2><p class="muted">Numără ce ai acum. Aplicația calculează până când ajunge și te anunță cu 14 zile înainte.</p>
+    <div class="stack">${SUPPLY_ITEMS.map(it => `<label class="f">${esc(it.n)} (${esc(it.u)})<input type="number" inputmode="numeric" min="0" step="1" data-sk="${it.k}" value="${st[it.k] ?? ""}"></label>`).join("")}</div>
+    <div class="row"><button class="btn primary grow" data-act="supplies-save">Salvează</button><button class="btn" data-act="close">Anulează</button></div>`);
+}
+function suppliesAlerts(k) {
+  const st = S.supplies || {}; if (!Object.keys(st).some(x => x !== "updated" && st[x] != null)) return [];
+  const f = supplyForecast(); const a = [];
+  for (const it of SUPPLY_ITEMS) { const ro = f.runsOut[it.k]; if (ro && diffDays(k, ro) <= 14) a.push(`<div class="alert ${diffDays(k, ro) <= 3 ? "" : "info"}"><b>${esc(it.n)}: ${diffDays(k, ro) <= 0 ? "stoc epuizat" : "ajunge doar până pe " + fmtL(ro)}</b>Necesar până la sfârșitul planului: ${Math.ceil(f.need[it.k])} ${esc(it.u)}. Vezi Fiole → Consumabile.</div>`); }
+  return a;
+}
+
+/* ---------- raport pentru medic ---------- */
+function reportSheet() {
+  const first = S.log.reduce((m, e) => e.date < m ? e.date : m, todayKey());
+  openSheet(`<h2>Raport pentru medic</h2><p class="muted">Un document tipăribil cu planul, administrările, starea, simptomele, fiolele și analizele din perioada aleasă. Din fereastra de tipărire alegi „Salvează ca PDF”.</p>
+    <div class="stack"><div class="row"><label class="f grow">De la<input type="date" id="rp-from" value="${first < PLAN_START ? first : PLAN_START}"></label><label class="f grow">Până la<input type="date" id="rp-to" value="${todayKey()}"></label></div>
+    <label class="f">Nume (opțional, apare în antet)<input type="text" id="rp-name" value="${esc(S.settings.patientName || "")}"></label>
+    <label class="check"><input type="checkbox" id="rp-comments" checked> Include comentariile din jurnal</label></div>
+    <div class="row"><button class="btn primary grow" data-act="report-build">Generează raportul</button><button class="btn" data-act="close">Anulează</button></div>`);
+}
+function reportHTML(from, to, name, withComments) {
+  const inR = k => k >= from && k <= to;
+  const logs = S.log.filter(e => inR(e.date)).sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
+  const subsIn = allSubs().filter(sb => !sb.stopped && sb.from <= to && sb.to >= from);
+  const feels = logs.filter(e => e.feel > 0);
+  const avg = feels.length ? feels.reduce((a, e) => a + e.feel, 0) / feels.length : null;
+  const symCount = {}; logs.forEach(e => (e.symptoms || []).forEach(x => symCount[x] = (symCount[x] || 0) + 1));
+  const symRows = Object.entries(symCount).sort((a, b) => b[1] - a[1]).map(([x, n]) => `${esc(x)} (${n})`).join(", ");
+  const local = logs.filter(e => (e.symptoms || []).some(x => LOCAL_SYMPTOMS.includes(x))).length;
+  const vialsIn = []; for (const sb of allSubs()) for (const v of (S.vials[sb.id] || [])) if (inR(v.opened)) vialsIn.push({ sb, v });
+  vialsIn.sort((a, b) => a.v.opened.localeCompare(b.v.opened));
+  const labsIn = S.labs.filter(l => inR(l.date)).sort((a, b) => a.date.localeCompare(b.date));
+  const perSub = {}; logs.forEach(e => { const p = perSub[e.sub] = perSub[e.sub] || { n: 0, mg: 0, feels: [] }; p.n++; p.mg += e.mg; if (e.feel > 0) p.feels.push(e.feel); });
+  return `<div class="pv-bar"><button class="btn primary" data-act="report-print">Tipărește / Salvează PDF</button><button class="btn" data-act="report-close">Închide</button></div>
+  <h1>Raport de administrare peptide</h1>
+  <div class="small">${name ? "Pacient: <b>" + esc(name) + "</b> · " : ""}Perioada ${fmtL(from)} ${fromKey(from).getFullYear()} – ${fmtL(to)} ${fromKey(to).getFullYear()} · generat ${fmtFull(todayKey())} · Peptide Tracker v${APP_VERSION}</div>
+  <div class="box small">Substanțele de mai jos sunt reactivi de cercetare, neautorizați ca medicamente în România sau UE. Dozele provin din fișa furnizorului și din literatură, nu din prescripție medicală. Raportul este un jurnal de autoadministrare, întocmit pentru consult.</div>
+  <h2>Planul în perioadă</h2>
+  <table><thead><tr><th>Substanța</th><th>Doză standard</th><th>Cale</th><th>Program</th><th>Perioada</th><th>Administrări</th><th>Total</th><th>Stare medie</th></tr></thead><tbody>
+  ${subsIn.map(sb => { const p = perSub[sb.id] || { n: 0, mg: 0, feels: [] }; const fa = p.feels.length ? num(p.feels.reduce((a, b) => a + b, 0) / p.feels.length) : "–"; return `<tr><td><b>${esc(sb.name)}</b><br><span class="small">${esc(sb.what)}</span></td><td>${esc(doseLabel(sb, sb.doseMg))} = ${fmtU(unitsFor(sb, sb.doseMg, activeVial(sb.id)))}</td><td>${esc(routeOf(sb).name)}</td><td>${esc(sb.cycle)}</td><td>${fmt(sb.from)} – ${fmt(sb.to)} ${fromKey(sb.to).getFullYear()}</td><td>${p.n}</td><td>${esc(doseLabel(sb, p.mg))}</td><td>${fa}</td></tr>`; }).join("")}
+  </tbody></table>
+  <h2>Sumar</h2>
+  <p>${logs.length} administrări înregistrate${avg ? `, stare medie ${num(avg)}/5 (${feels.length} evaluări)` : ""}. Reacții locale notate: ${local}. ${symRows ? "Simptome și observații bifate: " + symRows + "." : "Nicio observație bifată."}</p>
+  <h2>Administrări</h2>
+  ${logs.length ? `<table><thead><tr><th>Data</th><th>Ora</th><th>Substanța</th><th>Doză</th><th>Cale · loc</th><th>Stare</th><th>Observații</th>${withComments ? "<th>Comentariu</th>" : ""}</tr></thead><tbody>
+  ${logs.map(e => { const sb = sub(e.sub); const dev = e.planned && Math.abs(e.units - e.planned.units) > 0.01 ? ` <span class="small">(planificat ${fmtU(e.planned.units)})</span>` : ""; return `<tr><td>${fmtL(e.date)} ${fromKey(e.date).getFullYear()}</td><td>${esc(e.time || "")}</td><td>${esc(sb.short)}</td><td>${esc(e.label)} = ${fmtU(e.units)}${dev}</td><td>${(e.route || "sc").toUpperCase()} · ${esc(e.site || "")}</td><td>${e.feel || "–"}</td><td>${esc((e.symptoms || []).join(", "))}</td>${withComments ? `<td>${esc(e.comment || "")}</td>` : ""}</tr>`; }).join("")}
+  </tbody></table>` : "<p>Nicio administrare în perioadă.</p>"}
+  <h2>Fiole preparate</h2>
+  ${vialsIn.length ? `<table><thead><tr><th>Data</th><th>Substanța</th><th>Fiola</th><th>Reconstituire</th><th>Concentrație</th><th>Stare</th></tr></thead><tbody>${vialsIn.map(({ sb, v }) => `<tr><td>${fmtL(v.opened)} ${fromKey(v.opened).getFullYear()}</td><td>${esc(sb.name)}</td><td>#${v.n} · ${sb.vialMg} mg</td><td>${sb.ready ? "gata de uz" : num(v.waterMl) + " ml apă bacteriostatică"}</td><td>${num(conc(sb, v))} mg/ml</td><td>${v.discarded ? "aruncată" : num(v.leftMg) + " mg rămase"}</td></tr>`).join("")}</tbody></table>` : "<p>Nicio fiolă preparată în perioadă.</p>"}
+  <h2>Analize de sânge</h2>
+  ${labsIn.length ? `<table><thead><tr><th>Analiză</th>${labsIn.map(l => `<th>${fmtL(l.date)} ${fromKey(l.date).getFullYear()}</th>`).join("")}<th>Interval orientativ</th></tr></thead><tbody>${LAB_FIELDS.filter(f => labsIn.some(l => l.v[f.k] != null)).map(f => `<tr><td>${esc(f.n)} (${esc(f.u)})</td>${labsIn.map(l => `<td>${l.v[f.k] != null ? num(l.v[f.k]) : ""}</td>`).join("")}<td>${num(f.lo)}–${f.hi > 900 ? "" : num(f.hi)}</td></tr>`).join("")}</tbody></table>${labsIn.some(l => l.note) ? `<p class="small">${labsIn.filter(l => l.note).map(l => fmtL(l.date) + ": " + esc(l.note)).join("<br>")}</p>` : ""}` : "<p>Nicio analiză înregistrată în perioadă.</p>"}
+  <h2>Surse și note</h2>
+  <p class="small">Doze și reconstituire: fișa furnizorului MKM („dozaj si administrare”), august 2026. Nivelul dovezilor, avertismente și dozele raportate: „Raport de analiză peptide”, 19 august 2026. Certificatele de analiză din dosar acoperă puritatea (HPLC) și identitatea, nu sterilitatea sau endotoxinele.</p>`;
+}
+
+/* ---------- sincronizare GitHub (backup automat + intre dispozitive) ---------- */
+let pushTimer = null, syncBusy = false;
+const ghCfg = () => S.sync || {};
+function ghUrl() { const c = ghCfg(); return `https://api.github.com/repos/${c.repo}/contents/${c.path}`; }
+function ghHeaders() { return { "Authorization": "Bearer " + ghCfg().token, "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" }; }
+const b64enc = str => btoa(unescape(encodeURIComponent(str)));
+const b64dec = b => decodeURIComponent(escape(atob(b.replace(/\n/g, ""))));
+function exportable() { const c = JSON.parse(JSON.stringify(S)); if (c.sync) c.sync = Object.assign({}, c.sync, { token: "" }); delete c.notified; return c; }
+async function ghGet() {
+  const r = await fetch(ghUrl() + "?ref=" + encodeURIComponent(ghCfg().branch) + "&t=" + Date.now(), { headers: ghHeaders(), cache: "no-store" });
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error("GitHub " + r.status + (r.status === 401 ? ": token invalid" : r.status === 403 ? ": fără drepturi pe repo" : ""));
+  const j = await r.json();
+  let data = null; try { data = JSON.parse(b64dec(j.content)); } catch (e) {}
+  return { sha: j.sha, data };
+}
+async function ghPut(obj, sha) {
+  const body = { message: "Peptide Tracker backup " + new Date().toISOString(), content: b64enc(JSON.stringify(obj)), branch: ghCfg().branch };
+  if (sha) body.sha = sha;
+  const r = await fetch(ghUrl(), { method: "PUT", headers: Object.assign({ "Content-Type": "application/json" }, ghHeaders()), body: JSON.stringify(body) });
+  if (!r.ok) throw new Error("GitHub " + r.status + (r.status === 401 ? ": token invalid" : r.status === 403 ? ": token fără drept de scriere" : r.status === 409 ? ": conflict, reîncearcă" : r.status === 404 ? ": repo sau ramură inexistentă" : ""));
+  return (await r.json()).content.sha;
+}
+function schedulePush() { if (!ghCfg().token) return; clearTimeout(pushTimer); pushTimer = setTimeout(() => pushSync(false), 4000); }
+async function pushSync(manual) {
+  if (!ghCfg().token || syncBusy || !navigator.onLine) return;
+  syncBusy = true;
+  try {
+    const cur = await ghGet();
+    if (cur && cur.data && cur.data.meta && cur.data.meta.updatedAt > S.meta.updatedAt && cur.data.meta.updatedAt > (S.sync.lastSync || 0)) { syncBusy = false; return conflictSheet(cur); }
+    await ghPut(exportable(), cur && cur.sha);
+    S.sync.lastSync = Date.now(); S.sync.lastError = ""; save(true);
+    if (manual) toast("Sincronizat cu GitHub");
+    const el = $("#sync-status"); if (el) el.innerHTML = syncStatusHTML();
+  } catch (e) { S.sync.lastError = e.message; save(true); if (manual) toast(e.message); const el = $("#sync-status"); if (el) el.innerHTML = syncStatusHTML(); }
+  syncBusy = false;
+}
+async function pullSync(manual) {
+  if (!ghCfg().token || syncBusy || !navigator.onLine) return;
+  syncBusy = true;
+  try {
+    const cur = await ghGet();
+    if (!cur || !cur.data) { syncBusy = false; if (manual) toast("Nimic în cloud încă; trimit datele locale"); return pushSync(manual); }
+    const rem = cur.data.meta ? cur.data.meta.updatedAt : 0;
+    const localDirty = S.meta.updatedAt > (S.sync.lastSync || 0);
+    if (rem > S.meta.updatedAt) {
+      if (!localDirty) { adoptRemote(cur.data); if (manual) toast("Date actualizate din cloud"); }
+      else { syncBusy = false; return conflictSheet(cur); }
+    } else if (localDirty) { syncBusy = false; return pushSync(manual); }
+    else if (manual) toast("Totul e sincronizat");
+    S.sync.lastError = ""; save(true);
+  } catch (e) { S.sync.lastError = e.message; save(true); if (manual) toast(e.message); }
+  syncBusy = false;
+  const el = $("#sync-status"); if (el) el.innerHTML = syncStatusHTML();
+}
+function adoptRemote(data) {
+  const keep = S.sync;
+  S = Object.assign(defaultState(), data);
+  S.sync = Object.assign({}, S.sync, keep, { lastSync: Date.now(), lastError: "" });
+  save(true); render();
+}
+function conflictSheet(cur) {
+  const rem = cur.data;
+  openSheet(`<h2>Date diferite pe telefon și în cloud</h2>
+    <p class="muted">Ambele au fost modificate de la ultima sincronizare. Alege care versiune rămâne; cealaltă se pierde.</p>
+    <div class="stack">
+      <div class="card"><b>Telefonul acesta</b><br><span class="tiny">${S.log.length} administrări · ${Object.values(S.vials).flat().length} fiole · ${S.labs.length} analize · modificat ${new Date(S.meta.updatedAt).toLocaleString("ro-RO")}</span></div>
+      <div class="card"><b>Cloud (GitHub)</b><br><span class="tiny">${(rem.log || []).length} administrări · ${Object.values(rem.vials || {}).flat().length} fiole · ${(rem.labs || []).length} analize · modificat ${new Date(rem.meta ? rem.meta.updatedAt : 0).toLocaleString("ro-RO")}</span></div>
+    </div>
+    <div class="row"><button class="btn primary grow" data-act="sync-keep-local">Păstrează telefonul</button><button class="btn grow" data-act="sync-keep-remote">Ia versiunea din cloud</button></div>`);
+  window.__conflict = cur;
+}
+function syncStatusHTML() {
+  const c = ghCfg();
+  if (!c.token) return `<span class="sync-status">Neconfigurat. Datele stau doar pe acest telefon.</span>`;
+  const dirty = S.meta.updatedAt > (c.lastSync || 0);
+  return `<span class="sync-status">${c.lastError ? `<b class="err">Eroare: ${esc(c.lastError)}</b>` : dirty ? `<b style="color:var(--am)">Modificări nesincronizate</b>` : `<b>Sincronizat</b>`}${c.lastSync ? ` · ultima sincronizare ${new Date(c.lastSync).toLocaleString("ro-RO")}` : ""} · ${esc(c.repo)} @ ${esc(c.branch)}/${esc(c.path)}</span>`;
+}
+
 /* ---------- ecran Jurnal ---------- */
 let logFilter = "";
 function renderLog() {
@@ -441,7 +617,8 @@ function renderLog() {
   const avg = last7.length ? (last7.reduce((a, e) => a + e.feel, 0) / last7.length) : null;
   $("#subtitle").textContent = `${S.log.length} administrări înregistrate${avg ? ` · stare medie 7 zile: ${num(avg)}/5` : ""}`;
   const list = entries.filter(e => !logFilter || e.sub === logFilter);
-  let h = `<div class="card"><h2>Evoluție</h2>${chartSVG()}</div>
+  let h = `<div class="row" style="justify-content:flex-end"><button class="btn small" data-act="report-open">Raport pentru medic (PDF)</button></div>
+  <div class="card"><h2>Evoluție</h2>${chartSVG()}</div>
   <div class="card"><h2>Locuri de injecție</h2><div class="bodywrap">${bodySVG(null, false)}${bodyLegend()}</div></div>
   ${labsCard()}
   <div class="card flat"><label class="f">Filtrează<select id="log-filter"><option value="">Toate substanțele</option>${SUBS.map(s => `<option value="${s.id}" ${logFilter === s.id ? "selected" : ""}>${esc(s.short)}</option>`).join("")}</select></label></div>`;
@@ -589,7 +766,15 @@ function renderSettings() {
     <div class="card stack"><h2>Calendar telefon</h2>
       <p class="muted">Un eveniment cu alarmă pentru fiecare sesiune (dimineața și seara), cu substanțele, doza și unitățile în titlu. Importă fișierul în Google Calendar.</p>
       <button class="btn" data-act="ics">Exportă calendar (.ics)</button></div>
-    <div class="card stack"><h2>Backup</h2>
+    <div class="card stack"><h2>Sincronizare și backup automat</h2>
+      <p class="muted">Datele se salvează automat în repo-ul tău privat de GitHub, pe ramura <span class="mono">data</span> (neafișată de GitHub Pages), la câteva secunde după fiecare modificare, și se descarcă la deschiderea aplicației pe orice telefon. Ai nevoie de un token GitHub cu drept „Contents: Read and write” doar pe acest repo.</p>
+      <div id="sync-status">${syncStatusHTML()}</div>
+      <label class="f">Token GitHub (fine-grained)<input type="password" id="s-token" autocomplete="off" value="${esc(S.sync.token || "")}" placeholder="github_pat_..."></label>
+      <div class="row"><label class="f grow">Repo<input type="text" id="s-repo" value="${esc(S.sync.repo)}"></label><label class="f" style="width:110px">Ramură<input type="text" id="s-branch" value="${esc(S.sync.branch)}"></label></div>
+      <div class="row wrap"><button class="btn primary" data-act="sync-save">Salvează și sincronizează</button><button class="btn" data-act="sync-now" ${S.sync.token ? "" : "disabled"}>Sincronizează acum</button><button class="btn" data-act="sync-off" ${S.sync.token ? "" : "disabled"}>Deconectează</button></div>
+      <details><summary class="tiny" style="cursor:pointer">Cum creezi tokenul (o singură dată)</summary><ol class="steps" style="font-size:13px;margin-top:6px"><li>Pe github.com: Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token.</li><li>Repository access: „Only select repositories” → peptide-tracker.</li><li>Permissions → Repository permissions → Contents: <b>Read and write</b>. Restul rămân „No access”.</li><li>Expirare: cât mai lungă (max 1 an); când expiră, generezi altul și îl lipești aici.</li><li>Copiază tokenul și lipește-l în câmpul de mai sus, pe fiecare telefon pe care folosești aplicația.</li></ol><p class="tiny">Tokenul rămâne doar în telefon; nu este inclus în backup și nu este trimis nicăieri în afară de api.github.com.</p></details></div>
+    <div class="card stack"><h2>Raport pentru medic</h2><p class="muted">Document tipăribil cu planul, administrările, starea, fiolele și analizele dintr-o perioadă. Salvezi ca PDF din fereastra de tipărire.</p><button class="btn" data-act="report-open">Generează raportul</button></div>
+    <div class="card stack"><h2>Backup manual</h2>
       <p class="muted">Datele stau doar în acest browser. Exportă periodic și păstrează fișierul în Drive sau OneDrive.</p>
       <div class="row wrap"><button class="btn" data-act="export">Exportă datele (JSON)</button><label class="btn" style="display:inline-flex;align-items:center">Importă JSON<input type="file" id="s-import" accept="application/json" class="hide"></label></div></div>
     <div class="card stack"><h2>Resetare</h2>
@@ -817,7 +1002,28 @@ const A = {
   "notif-now": () => { const k = todayKey(); const ds = dosesOn(k).filter(d => !d.logged && !d.skipped); if (!ds.length) return toast("Nimic de administrat azi"); checkDueNow(true); toast("Reminder trimis"); },
   "notif-test": () => notify("Peptide Tracker", "Notificările funcționează. Așa vei fi anunțat la " + S.settings.am + " și " + S.settings.pm + "."),
   "ics": () => download("peptide-plan.ics", buildICS(), "text/calendar"),
-  "export": () => download(`peptide-backup-${todayKey()}.json`, JSON.stringify(S, null, 1), "application/json"),
+  "export": () => download(`peptide-backup-${todayKey()}.json`, JSON.stringify(exportable(), null, 1), "application/json"),
+  "supplies-edit": () => suppliesSheet(),
+  "supplies-save": () => { const st = S.supplies = S.supplies || {}; document.querySelectorAll("#sheet [data-sk]").forEach(i => { const v = parseFloat(i.value); st[i.dataset.sk] = isNaN(v) ? null : v; }); st.updated = todayKey(); save(); closeSheet(); toast("Stoc salvat"); render(); },
+  "report-open": () => reportSheet(),
+  "report-build": () => {
+    const from = $("#rp-from").value, to = $("#rp-to").value, name = $("#rp-name").value.trim(), wc = $("#rp-comments").checked;
+    if (!from || !to || to < from) return toast("Perioadă invalidă");
+    S.settings.patientName = name; save(true); closeSheet();
+    const pv = $("#printview"); pv.innerHTML = reportHTML(from, to, name, wc); pv.classList.add("on"); window.scrollTo(0, 0);
+  },
+  "report-print": () => window.print(),
+  "report-close": () => { const pv = $("#printview"); pv.classList.remove("on"); pv.innerHTML = ""; },
+  "sync-save": async () => {
+    const token = $("#s-token").value.trim(), repo = $("#s-repo").value.trim(), branch = $("#s-branch").value.trim() || "data";
+    if (!token) return toast("Lipsește tokenul");
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return toast("Repo în format utilizator/nume");
+    Object.assign(S.sync, { token, repo, branch, lastError: "" }); save(true); toast("Verific conexiunea..."); await pullSync(true); render();
+  },
+  "sync-now": async () => { await pullSync(true); render(); },
+  "sync-off": () => { if (confirm("Deconectezi sincronizarea? Datele rămân pe telefon și în GitHub.")) { S.sync.token = ""; S.sync.lastError = ""; save(true); render(); } },
+  "sync-keep-local": async () => { const cur = window.__conflict; closeSheet(); if (!cur) return; try { await ghPut(exportable(), cur.sha); S.sync.lastSync = Date.now(); S.sync.lastError = ""; save(true); toast("Telefonul a fost trimis în cloud"); } catch (e) { toast(e.message); } render(); },
+  "sync-keep-remote": () => { const cur = window.__conflict; closeSheet(); if (cur && cur.data) { adoptRemote(cur.data); toast("Date luate din cloud"); } },
   "wipe": () => { if (confirm("Ștergi TOATE datele (jurnal, fiole, plan)? Nu se poate anula.") && confirm("Sigur? Exportă mai întâi un backup dacă vrei să le păstrezi.")) { S = defaultState(); save(); render(); } }
 };
 document.addEventListener("click", e => {
@@ -857,6 +1063,8 @@ if ("serviceWorker" in navigator) {
 if (new URLSearchParams(location.search).get("mode") === "inject") view = "focus";
 render();
 checkDueNow(); scheduleUpcoming();
+pullSync(false);
+window.addEventListener("online", () => pullSync(false));
 setInterval(checkDueNow, 60 * 1000);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) { checkDueNow(); render(); } });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { checkDueNow(); render(); pullSync(false); } });
 })();
