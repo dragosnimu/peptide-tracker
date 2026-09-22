@@ -83,7 +83,17 @@ function scheduled(s, k) {
   const v = activeVial(s.id);
   return { sub: s, mg, units: unitsFor(s, mg, v), label: doseLabel(s, mg), note, kind, skipped: !!(dayo && dayo.skip), moved: !!(dayo && dayo.moved), logged: S.log.find(e => e.date === k && e.sub === s.id) || null, vial: v };
 }
-const dosesOn = k => allSubs().map(s => scheduled(s, k)).filter(Boolean);
+function adhocOn(k) {
+  const out = [];
+  for (const e of S.log) {
+    if (e.date !== k || !e.adhoc) continue;
+    const s = sub(e.sub); if (scheduled(s, k)) continue;
+    if (out.some(x => x.sub.id === s.id)) continue;
+    out.push({ sub: s, mg: e.mg, units: e.units, label: e.label, note: "în afara planului", kind: "adhoc", skipped: false, moved: false, logged: e, vial: activeVial(s.id), adhoc: true });
+  }
+  return out;
+}
+const dosesOn = k => allSubs().map(s => scheduled(s, k)).filter(Boolean).concat(adhocOn(k));
 const planEnd = () => allSubs().reduce((m, s) => s.to > m ? s.to : m, PLAN_START);
 const weekOf = k => Math.floor(diffDays(PLAN_START, k) / 7) + 1;
 const planWeeks = () => Math.max(PLAN_WEEKS, Math.ceil((diffDays(PLAN_START, planEnd()) + 1) / 7));
@@ -174,7 +184,7 @@ function renderToday() {
   const w = weekOf(k);
   $("#title").textContent = "Azi";
   $("#subtitle").textContent = `${fmtFull(k)}${w >= 1 && w <= planWeeks() ? ` · săptămâna ${w} din ${planWeeks()}` : ""}`;
-  $("#topaction").innerHTML = ds.some(d => !d.logged && !d.skipped) ? `<button class="btn small primary" data-act="focus-open">Mod injecție</button>` : "";
+  $("#topaction").innerHTML = (ds.some(d => !d.logged && !d.skipped) ? `<button class="btn small primary" data-act="focus-open">Mod injecție</button> ` : "") + `<button class="btn small" data-act="adhoc-open" data-k="${k}">+ Administrare</button>`;
   let h = alertsFor(k);
   if (!ds.length) h += `<div class="card"><h2>Nicio administrare azi</h2><p class="muted">${k < PLAN_START ? "Planul începe pe " + fmtL(PLAN_START) + "." : k > planEnd() ? "Planul s-a încheiat. Washout înainte de un al doilea ciclu." : "Zi liberă în calendar."}</p></div>`;
   else h += slotBlock(ds, k);
@@ -201,7 +211,7 @@ function renderCal() {
   let h = `<div class="card flat stack">
     <div class="weeknav"><button class="btn small" data-act="week" data-n="-1">←</button><div class="t">${intro.length ? "Intră: " + esc(intro.join(" + ")) : "Continuă ciclurile active"}<small>${fmt(ws)} – ${fmt(addDays(ws, 6))}</small></div><button class="btn small" data-act="week" data-n="1">→</button></div>
     <div class="days">${days}</div>
-    <div class="row between"><h2>${esc(fmtFull(selDay))}</h2><button class="btn small" data-act="sel-day" data-k="${todayKey()}">Azi</button></div>
+    <div class="row between"><h2>${esc(fmtFull(selDay))}</h2><span class="row" style="gap:6px"><button class="btn small" data-act="adhoc-open" data-k="${selDay}">+ Administrare</button><button class="btn small" data-act="sel-day" data-k="${todayKey()}">Azi</button></span></div>
     ${EVENTS[selDay] ? `<div class="alert info">${esc(EVENTS[selDay])}</div>` : ""}
     ${ds.length ? slotBlock(ds, selDay) : `<p class="muted">Nicio administrare în această zi.</p>`}
   </div>`;
@@ -531,7 +541,7 @@ function reportHTML(from, to, name, withComments) {
   <p>${logs.length} administrări înregistrate${avg ? `, stare medie ${num(avg)}/5 (${feels.length} evaluări)` : ""}. Reacții locale notate: ${local}. ${symRows ? "Simptome și observații bifate: " + symRows + "." : "Nicio observație bifată."}</p>
   <h2>Administrări</h2>
   ${logs.length ? `<table><thead><tr><th>Data</th><th>Ora</th><th>Substanța</th><th>Doză</th><th>Cale · loc</th><th>Stare</th><th>Observații</th>${withComments ? "<th>Comentariu</th>" : ""}</tr></thead><tbody>
-  ${logs.map(e => { const sb = sub(e.sub); const dev = e.planned && Math.abs(e.units - e.planned.units) > 0.01 ? ` <span class="small">(planificat ${fmtU(e.planned.units)})</span>` : ""; return `<tr><td>${fmtL(e.date)} ${fromKey(e.date).getFullYear()}</td><td>${esc(e.time || "")}</td><td>${esc(sb.short)}</td><td>${esc(e.label)} = ${fmtU(e.units)}${dev}</td><td>${(e.route || "sc").toUpperCase()} · ${esc(e.site || "")}</td><td>${e.feel || "–"}</td><td>${esc((e.symptoms || []).join(", "))}</td>${withComments ? `<td>${esc(e.comment || "")}</td>` : ""}</tr>`; }).join("")}
+  ${logs.map(e => { const sb = sub(e.sub); const dev = e.adhoc ? ` <span class="small">(în afara planului)</span>` : e.planned && Math.abs(e.units - e.planned.units) > 0.01 ? ` <span class="small">(planificat ${fmtU(e.planned.units)})</span>` : ""; return `<tr><td>${fmtL(e.date)} ${fromKey(e.date).getFullYear()}</td><td>${esc(e.time || "")}</td><td>${esc(sb.short)}</td><td>${esc(e.label)} = ${fmtU(e.units)}${dev}</td><td>${(e.route || "sc").toUpperCase()} · ${esc(e.site || "")}</td><td>${e.feel || "–"}</td><td>${esc((e.symptoms || []).join(", "))}</td>${withComments ? `<td>${esc(e.comment || "")}</td>` : ""}</tr>`; }).join("")}
   </tbody></table>` : "<p>Nicio administrare în perioadă.</p>"}
   <h2>Fiole preparate</h2>
   ${vialsIn.length ? `<table><thead><tr><th>Data</th><th>Substanța</th><th>Fiola</th><th>Lot / comandă</th><th>Reconstituire</th><th>Concentrație</th><th>Stare</th></tr></thead><tbody>${vialsIn.map(({ sb, v }) => { const o = (S.orders || []).find(x => x.id === v.orderId); return `<tr><td>${fmtL(v.opened)} ${fromKey(v.opened).getFullYear()}</td><td>${esc(sb.name)}</td><td>#${v.n} · ${sb.vialMg} mg</td><td>${v.lot ? "lot " + esc(v.lot) : ""}${o ? (v.lot ? " · " : "") + esc(o.supplier) + " " + fmt(o.date) : ""}</td><td>${sb.ready ? "gata de uz" : num(v.waterMl) + " ml apă bacteriostatică"}</td><td>${num(conc(sb, v))} mg/ml</td><td>${v.discarded ? "aruncată" : num(v.leftMg) + " mg rămase"}</td></tr>`; }).join("")}</tbody></table>` : "<p>Nicio fiolă preparată în perioadă.</p>"}
@@ -793,6 +803,17 @@ function authCard() {
     <details><summary class="tiny" style="cursor:pointer">Cum obții Client ID-ul (o singură dată, ~5 minute)</summary><ol class="steps" style="font-size:13px;margin-top:6px"><li>console.cloud.google.com → creează un proiect (ex. „Peptide Tracker”).</li><li>APIs &amp; Services → OAuth consent screen: tip External, completează numele aplicației și e-mailul, la „Test users” adaugă contul tău Google. Nu e nevoie de publicare.</li><li>APIs &amp; Services → Credentials → Create credentials → OAuth client ID → Application type: Web application.</li><li>Authorized JavaScript origins: <span class="mono">https://dragosnimu.github.io</span>. Fără redirect URI.</li><li>Copiază Client ID-ul (se termină în .apps.googleusercontent.com) și lipește-l mai sus, apoi „Salvează setările” și „Activează”.</li></ol><p class="tiny">Client ID-ul nu este secret; intră în backup, ca al doilea telefon să îl aibă automat. Google afișează conectarea în numele aplicației tale din Cloud Console.</p></details></div>`;
 }
 
+/* ---------- administrare libera (orice substanta, oricand) ---------- */
+function adhocSheet(k) {
+  const rows = allSubs().map(s => {
+    const d = scheduled(s, k), v = activeVial(s.id);
+    const st = d ? (d.logged ? "administrată azi" : d.skipped ? "sărită azi" : "programată azi") : s.stopped ? "oprită" : k < s.from ? "începe " + fmt(s.from) : k > s.to ? "încheiată " + fmt(s.to) : "pauză / zi liberă";
+    const units = unitsFor(s, s.doseMg, v);
+    return `<button class="btn" style="text-align:left;display:grid;gap:2px;font-weight:500" data-act="adhoc-pick" data-id="${s.id}" data-k="${k}"><span><b>${esc(s.short)}</b> <span class="chip ${d && !d.logged && !d.skipped ? "ok" : ""}">${esc(st)}</span></span><span class="tiny">${esc(doseLabel(s, s.doseMg))} = ${fmtU(units)} · ${esc(s.route)} · ${v ? "fiola #" + v.n + ", " + vialDosesLeft(s, v) + " doze" : "fără fiolă activă"}</span></button>`;
+  }).join("");
+  openSheet(`<h2>Administrare liberă · ${esc(fmtL(k))}</h2><p class="muted">Alege substanța. Doza standard vine precompletată și o poți schimba; verificările de siguranță rămân active. Administrările în afara planului apar în jurnal cu eticheta „neplanificată”.</p><div class="stack">${rows}</div><div class="row"><button class="btn" data-act="close">Anulează</button></div>`);
+}
+
 /* ---------- ecran Jurnal ---------- */
 let logFilter = "";
 function renderLog() {
@@ -809,7 +830,7 @@ function renderLog() {
   <div class="card flat"><label class="f">Filtrează<select id="log-filter"><option value="">Toate substanțele</option>${SUBS.map(s => `<option value="${s.id}" ${logFilter === s.id ? "selected" : ""}>${esc(s.short)}</option>`).join("")}</select></label></div>`;
   h += `<div class="card">${list.length ? list.map(e => {
     const s = sub(e.sub);
-    return `<div class="entry"><div class="h"><span>${esc(s.short)} · ${esc(e.label)} = ${fmtU(e.units)}${e.planned && Math.abs(e.units - e.planned.units) > 0.01 ? ` <span class="chip warn">planificat ${fmtU(e.planned.units)}</span>` : ""}</span><span>${fmtL(e.date)} ${esc(e.time || "")}</span></div>
+    return `<div class="entry"><div class="h"><span>${esc(s.short)} · ${esc(e.label)} = ${fmtU(e.units)}${e.adhoc ? ' <span class="chip warn">neplanificată</span>' : e.planned && Math.abs(e.units - e.planned.units) > 0.01 ? ` <span class="chip warn">planificat ${fmtU(e.planned.units)}</span>` : ""}</span><span>${fmtL(e.date)} ${esc(e.time || "")}</span></div>
       <div class="m row wrap">${e.feel ? `<span class="feel f${e.feel}">${e.feel}</span>` : ""}<span class="chip">${(e.route || "sc").toUpperCase()}</span><span>${esc(e.site || "")}</span>${(e.symptoms || []).map(x => `<span class="chip">${esc(x)}</span>`).join("")}</div>
       ${e.comment ? `<div class="m">${esc(e.comment)}</div>` : ""}
       <div class="row"><button class="btn small" data-act="log-edit" data-eid="${e.id}">Editează</button></div></div>`;
@@ -825,14 +846,17 @@ function suggestSite(rk, ml) {
 }
 function logSheet(id, k, entry) {
   const s = sub(id);
-  const d = entry ? null : scheduled(s, k);
+  let d = entry ? null : scheduled(s, k);
+  const adhoc = !entry && !d;
+  if (adhoc) { const v0 = activeVial(id); d = { mg: s.doseMg, units: unitsFor(s, s.doseMg, v0), label: doseLabel(s, s.doseMg), vial: v0 }; }
   const rk0 = entry ? (entry.route || "sc") : (s.routeKey || "sc");
-  const e = entry || { id: Date.now(), date: k, time: nowHM(), sub: id, mg: d.mg, units: d.units, label: d.label, site: suggestSite(rk0, d ? d.units / 100 : 0), feel: 0, symptoms: [], comment: "", planned: { mg: d.mg, units: d.units, label: d.label }, route: rk0 };
+  const e = entry || { id: Date.now(), date: k, time: nowHM(), sub: id, mg: d.mg, units: d.units, label: d.label, site: suggestSite(rk0, d ? d.units / 100 : 0), feel: 0, symptoms: [], comment: "", planned: { mg: d.mg, units: d.units, label: d.label }, route: rk0, adhoc };
   const vialOf = entry ? ((S.vials[id] || []).find(x => x.n === entry.vial) || activeVial(id)) : activeVial(id);
   const cc = conc(s, vialOf);
   const planned = e.planned || { mg: e.mg, units: e.units, label: e.label };
-  const html = `<h2>${entry ? "Administrare" : "Administrat"}: ${esc(s.short)}</h2>
-    <p class="muted">${esc(s.route)} · ${esc(fmtL(e.date))} · recomandat: <b>${esc(planned.label)} = ${fmtU(planned.units)}</b>${vialOf ? ` · fiola #${vialOf.n}${vialOf.lot ? ", lot " + esc(vialOf.lot) : ""}` : ""}</p>
+  const html = `<h2>${entry ? "Administrare" : "Administrat"}: ${esc(s.short)}${(adhoc || e.adhoc) ? ' <span class="chip warn">neplanificată</span>' : ""}</h2>
+    ${adhoc ? `<div class="alert info"><b>${esc(s.short)} nu este în plan pentru ${esc(fmtL(e.date))}</b>${s.stopped ? "Substanța este oprită în plan." : e.date < s.from ? "Planul începe pe " + fmtL(s.from) + "." : e.date > s.to ? "Planul s-a încheiat pe " + fmtL(s.to) + "." : "Zi de pauză sau zi fără administrare."} Se înregistrează ca administrare în afara planului, cu doza standard precompletată.</div>` : ""}
+    <p class="muted">${esc(s.route)} · ${esc(fmtL(e.date))} · ${adhoc ? "doză standard" : "recomandat"}: <b>${esc(planned.label)} = ${fmtU(planned.units)}</b>${vialOf ? ` · fiola #${vialOf.n}${vialOf.lot ? ", lot " + esc(vialOf.lot) : ""}` : ""}</p>
     <label class="f">Unități administrate (seringă U-100)<input type="number" id="l-units" inputmode="decimal" step="0.5" min="0" value="${String(Math.round(e.units * 100) / 100)}"></label>
     <div class="alert info" id="l-calc"></div>
     ${!entry && d && !d.vial ? `<div class="alert"><b>Nu ai o fiolă activă pentru ${esc(s.short)}</b>Poți salva oricum, dar stocul din fiolă nu va fi scăzut.</div>` : ""}
@@ -849,7 +873,7 @@ function logSheet(id, k, entry) {
     </div>
     <div class="row"><button class="btn primary grow" data-act="log-save" data-eid="${e.id}" data-id="${id}" data-k="${e.date}" data-new="${entry ? "" : "1"}">Salvează</button>${entry ? `<button class="btn danger" data-act="log-delete" data-eid="${e.id}">Șterge</button>` : ""}<button class="btn" data-act="close">Anulează</button></div>`;
   openSheet(html, host => {
-    host.__draft = { mg: e.mg, units: e.units, label: e.label, feel: e.feel, symptoms: (e.symptoms || []).slice(), planned };
+    host.__draft = { mg: e.mg, units: e.units, label: e.label, feel: e.feel, symptoms: (e.symptoms || []).slice(), planned, adhoc };
     const calc = () => {
       const u = Math.max(0, parseFloat(host.querySelector("#l-units").value) || 0);
       const mg = u / 100 * cc;
@@ -1093,7 +1117,7 @@ const A = {
       const s = sub(d.id), v = activeVial(d.id);
       if (!(dr.units > 0)) return toast("Introdu unitățile administrate");
       const taken = v ? Math.min(dr.mg, v.leftMg) : 0;
-      S.log.push({ id: +d.eid, date: d.k, time, sub: d.id, mg: dr.mg, units: dr.units, label: dr.label, site, feel: dr.feel, symptoms: dr.symptoms, comment, vial: v ? v.n : null, planned: dr.planned, route, taken });
+      S.log.push({ id: +d.eid, date: d.k, time, sub: d.id, mg: dr.mg, units: dr.units, label: dr.label, site, feel: dr.feel, symptoms: dr.symptoms, comment, vial: v ? v.n : null, planned: dr.planned, route, taken, adhoc: !!dr.adhoc });
       if (v) v.leftMg = Math.max(0, Math.round((v.leftMg - taken) * 1000) / 1000);
       const dk = S.days[d.k + "|" + d.id]; if (dk && dk.skip) { delete dk.skip; delete dk.moved; }
       toast(`${s.short} înregistrat: ${fmtU(dr.units)}`);
@@ -1149,6 +1173,8 @@ const A = {
     if (v) v.leftMg = Math.max(0, Math.round((v.leftMg - taken) * 1000) / 1000);
     save(); toast(`${s.short} înregistrat: ${fmtU(dd.units)}, ${d.site}`); focusIdx = 0; render(); window.scrollTo(0, 0);
   },
+  "adhoc-open": d => adhocSheet(d.k),
+  "adhoc-pick": d => { closeSheet(); logSheet(d.id, d.k, null); },
   "plan-edit": d => planSheet(d.id),
   "route-edit": d => routeSheet(d.id),
   "route-save": d => {

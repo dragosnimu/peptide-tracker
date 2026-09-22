@@ -1,8 +1,8 @@
 /* Datele planului: substantele din comanda MKM (august 2026), dozele standard din fisa
    furnizorului si avertismentele din raportul de analiza. Tot ce e aici poate fi
    suprascris din aplicatie (Calendar -> Editeaza planul). */
-const APP_VERSION = "2.3";
-const APP_DATE = "2026-09-05";
+const APP_VERSION = "2.4";
+const APP_DATE = "2026-09-22";
 const PLAN_START = "2026-09-05";
 const PLAN_WEEKS = 16;
 
