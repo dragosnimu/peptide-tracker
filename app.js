@@ -130,7 +130,7 @@ function doseCard(d, k) {
   else if (d.skipped) actions = `<div class="row wrap"><span class="chip">${d.moved ? "mutată pe mâine" : "sărită"}</span><span class="grow"></span><button class="btn small" data-act="unskip" data-id="${s.id}" data-k="${k}">Anulează</button></div>`;
   else actions = `<div class="row wrap"><button class="btn primary small" data-act="log-new" data-id="${s.id}" data-k="${k}">Administrat</button><button class="btn small" data-act="skip" data-id="${s.id}" data-k="${k}">Sari</button>${scheduled(s, addDays(k, 1)) ? "" : `<button class="btn small" data-act="move" data-id="${s.id}" data-k="${k}">Mâine</button>`}<span class="grow"></span><button class="btn small" data-act="dose-edit" data-id="${s.id}" data-k="${k}">Doză</button></div>`;
   return `<div class="dose ${cls}">
-    <div class="row between"><span class="name">${esc(s.short)}</span><span class="row" style="gap:6px">${hasIM(s) ? `<button class="chip acc" data-act="route-edit" data-id="${s.id}" title="Schimbă calea">${esc(s.route)} ▾</button>` : `<span class="chip">${esc(s.route)}</span>`}<span class="chip ${s.time}">${tl(s.time)}</span></span></div>
+    <div class="row between"><span class="name">${esc(s.short)} <button class="chip" data-act="info-open" data-id="${s.id}" title="Fișa completă" style="cursor:pointer">i</button></span><span class="row" style="gap:6px">${hasIM(s) ? `<button class="chip acc" data-act="route-edit" data-id="${s.id}" title="Schimbă calea">${esc(s.route)} ▾</button>` : `<span class="chip">${esc(s.route)}</span>`}<span class="chip ${s.time}">${tl(s.time)}</span></span></div>
     <div class="row"><span class="u">${fmtU(d.units)}</span><span class="muted">${esc(d.label)}${d.units > 100 ? ` = ${num(d.units / 100)} ml (seringă de 3 ml)` : ""}</span></div>
     ${d.note ? `<div class="note">${esc(d.note)}</div>` : ""}
     ${vialLine(d)}
@@ -271,7 +271,7 @@ function vialSheet(id) {
   const ords = (S.orders || []).filter(o => (o.items || []).some(it => it.sub === id && it.vials > 0)).sort((a, b) => b.date.localeCompare(a.date));
   const stepsHtml = `<ol class="steps">${s.steps.map(x => `<li>${esc(x)}</li>`).join("")}</ol>`;
   const html = `<h2>${s.ready ? "Deschide flacon" : "Prepară fiola"} #${n}: ${esc(s.name)}</h2>
-    <p class="muted">${esc(s.what)}</p>
+    <p class="muted">${esc(s.what)} <button class="btn small" data-act="info-open" data-id="${s.id}">Fișa completă</button></p>
     ${v ? `<div class="alert"><b>Fiola #${v.n} este încă activă</b> (${num(v.leftMg)} mg rămase). Va fi marcată ca aruncată.</div>` : ""}
     ${usedNow >= s.stock ? `<div class="alert"><b>Stocul de ${s.stock} fiole pentru ciclul acesta este consumat</b>Continuă doar dacă ai o comandă nouă (adaug-o în Fiole → Comenzi și loturi).</div>` : ""}
     ${stepsHtml}
@@ -443,7 +443,7 @@ function renderFocus() {
   main.innerHTML = `<div class="view focus">
     <div class="prog">${focusIdx + 1} din ${pend.length} · <span class="chip ${s.time}">${tl(s.time)}</span> <span class="chip">${esc(s.route)}</span></div>
     <div class="card stack">
-      <div class="big">${esc(s.name)}</div>
+      <div class="big">${esc(s.name)} <button class="chip" data-act="info-open" data-id="${s.id}" style="cursor:pointer;font-size:14px">i</button></div>
       <div class="units">${fmtU(d.units)}</div>
       <div class="lbl">${esc(d.label)}${d.units > 100 ? ` = ${num(d.units / 100)} ml` : ""} · ${esc(r.name)}</div>
       ${d.note ? `<div class="alert"><b>${esc(d.note)}</b></div>` : ""}
@@ -814,6 +814,56 @@ function adhocSheet(k) {
   openSheet(`<h2>Administrare liberă · ${esc(fmtL(k))}</h2><p class="muted">Alege substanța. Doza standard vine precompletată și o poți schimba; verificările de siguranță rămân active. Administrările în afara planului apar în jurnal cu eticheta „neplanificată”.</p><div class="stack">${rows}</div><div class="row"><button class="btn" data-act="close">Anulează</button></div>`);
 }
 
+/* ---------- ecran Info: fise complete ---------- */
+let infoSel = null;
+function evLevelClass(t) { t = (t || "").toLowerCase(); if (/fază 3|clinice umane/.test(t)) return "good"; if (/preclinic solid|clinic doar|clinic pentru/.test(t)) return "mid"; return "low"; }
+function infoSheetHTML(s) {
+  const I = INFO[s.id]; if (!I) return `<p class="muted">Fără fișă.</p>`;
+  const v = activeVial(s.id);
+  const r = routeOf(s);
+  const schemes = I.recon.schemes.map(sc => `<div class="tiny" style="margin-top:8px"><b>${esc(sc.label)}</b></div><table><thead><tr><th>Doză</th><th>De tras</th></tr></thead><tbody>${sc.doses.map(([mg, u]) => `<tr><td>${esc(doseLabel(s, mg))}</td><td class="u">${esc(u)}</td></tr>`).join("")}</tbody></table>`).join("");
+  return `<div class="info">
+    <p>${esc(I.what)}</p>
+    <h3>Nivelul dovezilor</h3>
+    <span class="lvl ${evLevelClass(I.evidence.level)}">${esc(I.evidence.level)}</span>
+    <p style="margin-top:6px">${esc(I.evidence.text)}</p>
+    <h3>Mecanism de acțiune</h3><ul>${I.mechanism.map(x => `<li>${esc(x)}</li>`).join("")}</ul>
+    <h3>Beneficii revendicate</h3><p>${I.benefits.map(esc).join(" · ")}</p>
+    <h3>Doză și frecvență</h3><ul>${I.dosing.map(x => `<li><span class="src">${esc(x.src)}</span>${esc(x.text)}</li>`).join("")}</ul>
+    <div class="alert info" style="margin-top:8px"><b>În aplicație acum</b>${esc(doseLabel(s, s.doseMg))} = ${fmtU(unitsFor(s, s.doseMg, v))}${v ? ` cu fiola #${v.n} (${num(conc(s, v))} mg/ml)` : " cu reconstituirea standard"} · ${esc(r.name)} · ${tl(s.time)} · ${esc(s.cycle)}${s.maxMg ? ` · maxim din surse: ${esc(doseLabel(s, s.maxMg))}` : ""}</div>
+    <h3>Când</h3><p>${esc(I.when)}</p>
+    <h3>Unde și cum</h3><p>${esc(I.where)}</p><p class="tiny" style="margin-top:4px">Cale: ${esc(I.route)}</p>
+    <details style="margin-top:6px"><summary class="tiny" style="cursor:pointer">Procedura de injectare (${esc(r.label)}), pas cu pas</summary><ol class="steps" style="font-size:13.5px;margin-top:6px">${r.steps.map(x => `<li>${esc(x)}</li>`).join("")}</ol><p class="tiny">${esc(r.needle)}</p></details>
+    <h3>Reconstituire</h3>
+    <p>${esc(I.recon.note)}</p>
+    <ol class="steps" style="font-size:13.5px;margin-top:6px">${s.steps.map(x => `<li>${esc(x)}</li>`).join("")}</ol>
+    ${schemes}
+    <p class="tiny" style="margin-top:6px">${esc(INFO_GENERAL.formula)}</p>
+    <h3>Păstrare și stabilitate</h3><p>${esc(I.storage)}</p>
+    <h3>Avertismente</h3><ul>${I.warnings.map(x => `<li>${esc(x)}</li>`).join("")}</ul>
+    <h3>Suprapuneri</h3><p>${esc(I.interactions)}</p>
+    <p class="tiny" style="margin-top:14px">${esc(INFO_GENERAL.disclaimer)}</p>
+  </div>`;
+}
+function infoSheet(id) {
+  const s = sub(id);
+  openSheet(`<h2>${esc(s.name)}</h2>${infoSheetHTML(s)}<div class="row"><button class="btn primary grow" data-act="close">Închide</button></div>`);
+}
+function renderInfo() {
+  $("#title").textContent = "Info";
+  $("#subtitle").textContent = "Fișe complete, ghid general";
+  const list = allSubs().map(s => { const I = INFO[s.id] || {}; return `<button class="btn" data-act="info-open" data-id="${s.id}"><span><b>${esc(s.name)}</b> <span class="lvl ${evLevelClass(I.evidence && I.evidence.level)}" style="font-size:11px;padding:1px 8px">${esc(I.evidence ? I.evidence.level : "")}</span></span><span class="tiny">${esc(doseLabel(s, s.doseMg))} = ${fmtU(unitsFor(s, s.doseMg, activeVial(s.id)))} · ${esc(s.route)} · ${tl(s.time)} · ${esc((I.benefits || []).join(", "))}</span></button>`; }).join("");
+  main.innerHTML = `<div class="view">
+    <div class="card info stack infolist"><h2>Substanțe</h2><p class="tiny">Ce este, dovezi, mecanism, beneficii, doze din fiecare sursă, când, unde, cum, reconstituire cu tabel de unități, păstrare, avertismente.</p>${list}</div>
+    <div class="card info"><h2>Ghid general</h2><ul>${INFO_GENERAL.general.map(x => `<li>${esc(x)}</li>`).join("")}</ul>
+      <h3>Solvenți</h3><p>${esc(INFO_GENERAL.water)}</p>
+      <h3>Formula de calcul</h3><p class="mono" style="font-size:13.5px">${esc(INFO_GENERAL.formula)}</p>
+      <h3>Căi de administrare</h3>
+      ${["sc", "im"].map(k => { const r = ROUTES[k]; return `<details style="margin-top:6px"><summary style="cursor:pointer;font-weight:600">${esc(r.name)}</summary><p class="muted" style="margin:6px 0">${esc(r.summary)}</p><div class="tiny"><b style="color:var(--ok)">Avantaje</b></div><ul>${r.pros.map(x => `<li>${esc(x)}</li>`).join("")}</ul><div class="tiny" style="margin-top:6px"><b style="color:var(--warn)">Dezavantaje</b></div><ul>${r.cons.map(x => `<li>${esc(x)}</li>`).join("")}</ul><div class="tiny" style="margin-top:6px"><b>Procedură</b> · ${esc(r.needle)}</div><ol class="steps" style="font-size:13.5px;margin-top:4px">${r.steps.map(x => `<li>${esc(x)}</li>`).join("")}</ol><p class="tiny">Locuri: ${r.sites.join(", ")}.</p></details>`; }).join("")}
+      <p class="tiny" style="margin-top:14px">${esc(INFO_GENERAL.disclaimer)}</p></div>
+  </div>`;
+}
+
 /* ---------- ecran Jurnal ---------- */
 let logFilter = "";
 function renderLog() {
@@ -1173,6 +1223,7 @@ const A = {
     if (v) v.leftMg = Math.max(0, Math.round((v.leftMg - taken) * 1000) / 1000);
     save(); toast(`${s.short} înregistrat: ${fmtU(dd.units)}, ${d.site}`); focusIdx = 0; render(); window.scrollTo(0, 0);
   },
+  "info-open": d => infoSheet(d.id),
   "adhoc-open": d => adhocSheet(d.k),
   "adhoc-pick": d => { closeSheet(); logSheet(d.id, d.k, null); },
   "plan-edit": d => planSheet(d.id),
@@ -1299,7 +1350,7 @@ function render() {
   document.querySelectorAll("#nav button").forEach(b => b.classList.toggle("on", b.dataset.v === view || (view === "focus" && b.dataset.v === "today")));
   $("#topaction").innerHTML = "";
   if (pendingConflict && !$("#sheet").innerHTML) { const c = pendingConflict; pendingConflict = null; setTimeout(() => conflictSheet(c), 50); }
-  ({ today: renderToday, cal: renderCal, vials: renderVials, log: renderLog, settings: renderSettings, focus: renderFocus })[view]();
+  ({ today: renderToday, cal: renderCal, vials: renderVials, log: renderLog, settings: renderSettings, focus: renderFocus, info: renderInfo })[view]();
   const pending = dosesOn(todayKey()).filter(d => !d.logged && !d.skipped).length;
   const nb = $("#nav button[data-v=today]"); let badge = nb.querySelector(".badge");
   if (pending) { if (!badge) { badge = document.createElement("span"); badge.className = "badge"; nb.appendChild(badge); } badge.textContent = pending; } else if (badge) badge.remove();

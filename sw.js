@@ -1,6 +1,6 @@
 /* Service worker: cache offline + notificari programate (periodic background sync). */
-const CACHE = "peptide-tracker-v15";
-const ASSETS = ["./", "./index.html", "./app.js", "./data.js", "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png"];
+const CACHE = "peptide-tracker-v16";
+const ASSETS = ["./", "./index.html", "./app.js", "./data.js", "./info.js", "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png"];
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS.map(a => new Request(a, { cache: "reload" })))));
