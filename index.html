@@ -242,6 +242,20 @@ nav button .badge{position:absolute;margin-left:22px;margin-top:-4px;background:
 .info td.u{font-family:var(--mono);font-weight:600;white-space:nowrap}
 .info .src{font-family:var(--mono);font-size:11px;color:var(--accent);display:block}
 .infolist .btn{text-align:left;display:grid;gap:2px;font-weight:500}
+
+/* v2.6: export fise */
+#printview .info h3{font-size:12.5px;color:#555;text-transform:uppercase;letter-spacing:.04em;margin:12px 0 4px;border:0;padding:0}
+#printview .info ul{margin:0;padding-left:18px}
+#printview .info .lvl{display:inline-block;padding:2px 8px;border:1px solid #999;border-radius:12px;font-weight:600;font-size:12px}
+#printview .info .src{font-family:ui-monospace,monospace;font-size:10.5px;color:#0F6E8C;display:block}
+#printview .info table{width:auto;min-width:220px}
+#printview .fiche{page-break-after:always;padding-bottom:8px}
+#printview .fiche:last-child{page-break-after:auto}
+#printview .fiche h1{font-size:18px;margin:0 0 2px}
+#printview .alert.info{border-left:3px solid #0F6E8C;background:#eef5f8;padding:6px 10px;margin:6px 0;font-size:12.5px}
+#printview .steps{margin:4px 0;padding-left:20px}
+#printview details{display:block} #printview summary{display:none} #printview details > *{display:block}
+@media print{ #printview .fiche{page-break-after:always} }
 </style>
 </head>
 <body>
@@ -263,6 +277,7 @@ nav button .badge{position:absolute;margin-left:22px;margin-top:-4px;background:
 <div id="lock" aria-hidden="true"></div>
 <script src="data.js"></script>
 <script src="info.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" defer></script>
 <script src="app.js"></script>
 </body>
 </html>

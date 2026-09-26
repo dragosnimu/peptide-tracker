@@ -847,14 +847,14 @@ function infoSheetHTML(s) {
 }
 function infoSheet(id) {
   const s = sub(id);
-  openSheet(`<h2>${esc(s.name)}</h2>${infoSheetHTML(s)}<div class="row"><button class="btn primary grow" data-act="close">Închide</button></div>`);
+  openSheet(`<h2>${esc(s.name)}</h2><div class="row wrap"><button class="btn small primary" data-act="fiche-open" data-id="${id}">Exportă / partajează PDF</button></div>${infoSheetHTML(s)}<div class="row"><button class="btn primary grow" data-act="close">Închide</button></div>`);
 }
 function renderInfo() {
   $("#title").textContent = "Info";
   $("#subtitle").textContent = "Fișe complete, ghid general";
   const list = allSubs().map(s => { const I = INFO[s.id] || {}; return `<button class="btn" data-act="info-open" data-id="${s.id}"><span><b>${esc(s.name)}</b> <span class="lvl ${evLevelClass(I.evidence && I.evidence.level)}" style="font-size:11px;padding:1px 8px">${esc(I.evidence ? I.evidence.level : "")}</span></span><span class="tiny">${esc(doseLabel(s, s.doseMg))} = ${fmtU(unitsFor(s, s.doseMg, activeVial(s.id)))} · ${esc(s.route)} · ${tl(s.time)} · ${esc((I.benefits || []).join(", "))}</span></button>`; }).join("");
   main.innerHTML = `<div class="view">
-    <div class="card info stack infolist"><h2>Substanțe</h2><p class="tiny">Ce este, dovezi, mecanism, beneficii, doze din fiecare sursă, când, unde, cum, reconstituire cu tabel de unități, păstrare, avertismente.</p>${list}</div>
+    <div class="card info stack infolist"><div class="row between"><h2 style="margin:0">Substanțe</h2><button class="btn small primary" data-act="fiche-all">Toate în PDF</button></div><p class="tiny">Ce este, dovezi, mecanism, beneficii, doze din fiecare sursă, când, unde, cum, reconstituire cu tabel de unități, păstrare, avertismente. Fiecare fișă se poate exporta și partaja ca PDF.</p>${list}</div>
     <div class="card info"><h2>Ghid general</h2><ul>${INFO_GENERAL.general.map(x => `<li>${esc(x)}</li>`).join("")}</ul>
       <h3>Solvenți</h3><p>${esc(INFO_GENERAL.water)}</p>
       <h3>Formula de calcul</h3><p class="mono" style="font-size:13.5px">${esc(INFO_GENERAL.formula)}</p>
@@ -862,6 +862,40 @@ function renderInfo() {
       ${["sc", "im"].map(k => { const r = ROUTES[k]; return `<details style="margin-top:6px"><summary style="cursor:pointer;font-weight:600">${esc(r.name)}</summary><p class="muted" style="margin:6px 0">${esc(r.summary)}</p><div class="tiny"><b style="color:var(--ok)">Avantaje</b></div><ul>${r.pros.map(x => `<li>${esc(x)}</li>`).join("")}</ul><div class="tiny" style="margin-top:6px"><b style="color:var(--warn)">Dezavantaje</b></div><ul>${r.cons.map(x => `<li>${esc(x)}</li>`).join("")}</ul><div class="tiny" style="margin-top:6px"><b>Procedură</b> · ${esc(r.needle)}</div><ol class="steps" style="font-size:13.5px;margin-top:4px">${r.steps.map(x => `<li>${esc(x)}</li>`).join("")}</ol><p class="tiny">Locuri: ${r.sites.join(", ")}.</p></details>`; }).join("")}
       <p class="tiny" style="margin-top:14px">${esc(INFO_GENERAL.disclaimer)}</p></div>
   </div>`;
+}
+
+/* ---------- export fise (PDF / partajare) ---------- */
+function ficheHTML(s) {
+  const I = INFO[s.id];
+  return `<div class="fiche"><h1>${esc(s.name)}</h1><div class="small">Fișă informativă · ${esc(I ? I.evidence.level : "")} · generată ${fmtFull(todayKey())} · Peptide Tracker v${APP_VERSION}</div>${infoSheetHTML(s).replace(/<details[^>]*>/g, "<div>").replace(/<\/details>/g, "</div>").replace(/<summary[^>]*>.*?<\/summary>/g, "")}</div>`;
+}
+function ficheDocHTML(ids) {
+  const subs = ids.map(id => sub(id));
+  const multi = subs.length > 1;
+  return `<div class="pv-bar"><button class="btn primary" data-act="fiche-share">Partajează PDF</button><button class="btn" data-act="fiche-download">Descarcă PDF</button><button class="btn" data-act="report-print">Tipărește</button><button class="btn" data-act="report-close">Închide</button></div>
+  <div id="fiche-doc">${multi ? `<div class="fiche"><h1>Fișe informative peptide</h1><div class="small">${subs.length} substanțe · generat ${fmtFull(todayKey())} · Peptide Tracker v${APP_VERSION}</div><div class="box small">${esc(INFO_GENERAL.disclaimer)}</div><h2>Cuprins</h2><ol>${subs.map(x => `<li>${esc(x.name)}</li>`).join("")}</ol><h2>Ghid general</h2><ul>${INFO_GENERAL.general.map(x => `<li>${esc(x)}</li>`).join("")}</ul><p class="small"><b>Solvenți.</b> ${esc(INFO_GENERAL.water)}</p><p class="small"><b>Formula.</b> ${esc(INFO_GENERAL.formula)}</p></div>` : ""}${subs.map(ficheHTML).join("")}</div>`;
+}
+function openFiche(ids) {
+  const pv = $("#printview"); pv.innerHTML = ficheDocHTML(ids); pv.classList.add("on"); pv.__ids = ids; window.scrollTo(0, 0);
+}
+function ficheFilename(ids) { return ids.length === 1 ? `fisa-${sub(ids[0]).short.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${todayKey()}.pdf` : `fise-peptide-${todayKey()}.pdf`; }
+async function ficheToPdfBlob(ids) {
+  if (!window.html2pdf) throw new Error("Generatorul PDF nu s-a încărcat (fără internet?). Folosește „Tipărește” → Salvează ca PDF.");
+  const el = $("#fiche-doc");
+  const opt = { margin: [10, 10, 12, 10], filename: ficheFilename(ids), image: { type: "jpeg", quality: 0.95 }, html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff" }, jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }, pagebreak: { mode: ["css", "legacy"], before: ".fiche" } };
+  return await html2pdf().set(opt).from(el).outputPdf("blob");
+}
+async function shareFiche(ids, forceDownload) {
+  const name = ficheFilename(ids);
+  toast("Generez PDF-ul...");
+  let blob;
+  try { blob = await ficheToPdfBlob(ids); } catch (e) { return toast(e.message); }
+  const file = new File([blob], name, { type: "application/pdf" });
+  if (!forceDownload && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: name.replace(".pdf", ""), text: "Fișă informativă din Peptide Tracker" }); return; } catch (e) { if (e.name === "AbortError") return; }
+  }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+  toast("PDF descărcat: " + name);
 }
 
 /* ---------- ecran Jurnal ---------- */
@@ -1224,6 +1258,10 @@ const A = {
     save(); toast(`${s.short} înregistrat: ${fmtU(dd.units)}, ${d.site}`); focusIdx = 0; render(); window.scrollTo(0, 0);
   },
   "info-open": d => infoSheet(d.id),
+  "fiche-open": d => { closeSheet(); openFiche([d.id]); },
+  "fiche-all": () => openFiche(SUBS.map(x => x.id)),
+  "fiche-share": () => shareFiche($("#printview").__ids || [], false),
+  "fiche-download": () => shareFiche($("#printview").__ids || [], true),
   "adhoc-open": d => adhocSheet(d.k),
   "adhoc-pick": d => { closeSheet(); logSheet(d.id, d.k, null); },
   "plan-edit": d => planSheet(d.id),
