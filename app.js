@@ -97,6 +97,29 @@ function attachOrphans(subId) {
   return n;
 }
 const orphanCount = subId => S.log.filter(e => e.sub === subId && e.vial == null).length;
+/* Desfasurator: toate administrarile unei fiole, cu mg, unitati si soldul dupa fiecare. */
+function vialLedgerHTML(s, v) {
+  const es = S.log.filter(e => e.sub === s.id && e.vial === v.n).sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
+  const lf = lossFactor(), c = conc(s, v);
+  const std = unitsFor(s, s.doseMg, v);
+  let left = v.manualMg != null ? v.manualMg : s.vialMg, sumMg = 0, sumU = 0, rows = "";
+  rows += `<tr class="open"><td>${fmtL(v.opened)}</td><td>${s.ready ? "deschis" : "reconstituit, " + num(v.waterMl) + " ml"}</td><td class="n"></td><td class="n"></td><td class="n">${num(s.vialMg)}</td></tr>`;
+  if (v.manualMg != null) rows += `<tr class="open"><td></td><td>corecție manuală</td><td class="n"></td><td class="n"></td><td class="n">${num(v.manualMg)}</td></tr>`;
+  for (const e of es) {
+    if (v.manualMg != null && e.manualBefore) continue;
+    const taken = e.taken != null ? e.taken : r3(e.mg * lf);
+    left = r3(Math.max(0, left - taken));
+    sumMg += taken; sumU += e.units;
+    const over = e.planned && e.units > e.planned.units + 0.01;
+    rows += `<tr><td>${fmtL(e.date)} ${esc(e.time || "")}</td><td>${e.adhoc ? "neplanificat" : e.planned && Math.abs(e.units - e.planned.units) > 0.01 ? "plan " + fmtU(e.planned.units) : "conform plan"}</td><td class="n ${over ? "over" : ""}">${fmtU(e.units)}</td><td class="n ${over ? "over" : ""}">${num(e.mg)}${lf > 1 ? ` <span class="tiny">+${num(r3(taken - e.mg))}</span>` : ""}</td><td class="n">${num(left)}</td></tr>`;
+  }
+  rows += `<tr class="tot"><td colspan="2">Total ${es.length} administrări${lf > 1 ? ` (incl. ${num(S.settings.lossPct)}% pierdere)` : ""}</td><td class="n">${fmtU(sumU)}</td><td class="n">${num(r3(sumMg))}</td><td class="n">${num(v.leftMg)}</td></tr>`;
+  const planned = es.filter(e => e.planned).reduce((a, e) => a + e.planned.units, 0);
+  const extra = sumU - planned;
+  return `<details open style="margin-top:6px"><summary class="tiny" style="cursor:pointer">Desfășurător fiola #${v.n}: ${es.length} administrări, ${fmtU(sumU)} = ${num(r3(sumMg))} mg din ${num(s.vialMg)} mg${extra > 0.01 ? ` · <span style="color:var(--warn)">+${fmtU(extra)} peste plan</span>` : ""}</summary>
+    <div style="overflow-x:auto"><table class="ledger"><thead><tr><th>Data</th><th>Notă</th><th style="text-align:right">Unități</th><th style="text-align:right">mg</th><th style="text-align:right">Rămas mg</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="tiny">1 U = ${num(c / 100)} mg cu această fiolă · doza standard ${esc(doseLabel(s, s.doseMg))} = ${fmtU(std)} · mai ajung ${vialDosesLeft(s, v)} doze standard. Roșu = peste doza planificată.</p></details>`;
+}
 function reconcileAll() { let n = 0; for (const sb of SUBS) { n += attachOrphans(sb.id); recalcVials(sb.id); } return n; }
 
 function scheduled(s, k) {
@@ -290,6 +313,7 @@ function renderVials() {
         <div class="stockrow"><span>${num(v.leftMg)} mg rămase ≈ <b>${vialDosesLeft(s, v)} doze</b> de ${esc(doseLabel(s, s.doseMg))}</span><span class="mono" style="color:${dl < 0 ? "var(--warn)" : dl <= 2 ? "var(--am)" : "inherit"}">${dl < 0 ? "expirată" : dl === 0 ? "expiră azi" : "expiră " + fmt(exp)}</span></div>
         <div class="stockrow"><span>Doza standard cu această fiolă</span><span class="mono"><b>${fmtU(unitsFor(s, s.doseMg, v))}</b></span></div>
         ${S.settings.lossPct ? `<div class="tiny">Dozele rămase includ pierderea la tragere de ${num(S.settings.lossPct)}% (Setări).</div>` : ""}
+        ${vialLedgerHTML(s, v)}
         <div class="row wrap"><button class="btn small" data-act="vial-new" data-id="${s.id}">Fiolă nouă</button><button class="btn small" data-act="vial-empty" data-id="${s.id}">Marchează goală</button><button class="btn small" data-act="vial-adjust" data-id="${s.id}">Corectează mg rămase</button><button class="btn small danger" data-act="vial-discard" data-id="${s.id}">Aruncă fiola #${v.n}</button></div>`;
     } else {
       body = `<p class="muted">${s.ready ? "Niciun flacon deschis." : "Nicio fiolă reconstituită."} ${active ? "Este nevoie de una pentru administrările din perioada aceasta." : ""}</p>
@@ -297,7 +321,7 @@ function renderVials() {
     }
     h += `<div class="vial"><div class="row between"><span class="name">${esc(s.name)}</span><span class="chip ${left <= 0 ? "warn" : ""}">${used} / ${s.stock} folosite</span></div>
       <div class="tiny">${esc(s.cycle)} · ${esc(s.stab)}</div>${orphanCount(s.id) ? `<div class="alert"><b>${orphanCount(s.id)} administrări fără fiolă atribuită</b>Nu au fost scăzute din nicio fiolă. <button class="btn small" data-act="vial-attach" data-id="${s.id}">Atribuie fiolei deschise la data lor</button></div>` : ""}${body}
-      ${vs.length > 1 ? `<details><summary class="tiny">Istoric fiole (${vs.length})</summary><div class="tiny">${vs.map(x => `#${x.n}: ${fmtL(x.opened)}${x.lot ? ", lot " + esc(x.lot) : ""}${x.discarded ? ", aruncată" : ""}, ${num(x.leftMg)} mg rămase`).join("<br>")}</div></details>` : ""}
+      ${vs.length > 1 ? `<details><summary class="tiny">Istoric fiole (${vs.length})</summary><div class="tiny">${vs.filter(x => x !== v).map(x => `<div style="margin:6px 0">#${x.n}: ${fmtL(x.opened)}${x.lot ? ", lot " + esc(x.lot) : ""}${x.emptied ? ", golită" : x.discarded ? ", aruncată" : ""}, ${num(x.leftMg)} mg rămase${vialLedgerHTML(s, x).replace("<details open", "<details")}</div>`).join("")}</div></details>` : ""}
     </div>`;
   }
   main.innerHTML = `<div class="view">${suppliesCard()}${ordersCard()}${h}</div>`;
