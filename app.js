@@ -24,7 +24,7 @@ const nowHM = () => { const d = new Date(); return pad(d.getHours()) + ":" + pad
 
 /* ---------- stare ---------- */
 const SK = "peptide-tracker-v1";
-const defaultState = () => ({ v: 1, settings: { am: "06:45", pm: "21:00", notif: false }, plan: {}, days: {}, vials: {}, log: [], notified: {}, labs: [], supplies: { s03: null, s1: null, s3: null, waterMl: null, swabs: null, updated: null }, sync: { token: "", repo: "dragosnimu/peptide-tracker", branch: "data", path: "peptide-backup.json", lastSync: 0, lastError: "", lastSha: "", calId: "", calHash: 0, calAt: 0, calError: "" }, meta: { updatedAt: 0 }, orders: [], auth: { enabled: false, clientId: "", allowed: [], days: 30 } });
+const defaultState = () => ({ v: 1, settings: { am: "06:45", pm: "21:00", notif: false, lossPct: 0 }, plan: {}, days: {}, vials: {}, log: [], notified: {}, labs: [], supplies: { s03: null, s1: null, s3: null, waterMl: null, swabs: null, updated: null }, sync: { token: "", repo: "dragosnimu/peptide-tracker", branch: "data", path: "peptide-backup.json", lastSync: 0, lastError: "", lastSha: "", calId: "", calHash: 0, calAt: 0, calError: "" }, meta: { updatedAt: 0 }, orders: [], auth: { enabled: false, clientId: "", allowed: [], days: 30 } });
 let S = load();
 function migrate(s) {
   const d = defaultState(); const out = Object.assign(d, s);
@@ -63,7 +63,41 @@ function conc(s, v) { if (s.ready) return s.vialMg / s.vialMl; const w = (v && v
 const unitsFor = (s, mg, v) => mg / conc(s, v) * 100;
 function activeVial(id) { const vs = S.vials[id] || []; return vs.filter(v => !v.discarded).slice(-1)[0] || null; }
 const vialExpiry = (s, v) => addDays(v.opened, s.stabilityDays);
-const vialDosesLeft = (s, v) => Math.max(0, Math.floor(v.leftMg / s.doseMg + 1e-9));
+const vialDosesLeft = (s, v) => Math.max(0, Math.floor(v.leftMg / (s.doseMg * lossFactor()) + 1e-9));
+const lossFactor = () => 1 + Math.max(0, Math.min(50, +((S.settings && S.settings.lossPct) || 0))) / 100;
+const r3 = x => Math.round(x * 1000) / 1000;
+/* Recalculeaza stocul fiecarei fiole a unei substante din jurnal: leftMg = vialMg - suma dozelor
+   atribuite fiolei (in ordine cronologica), fiecare majorata cu pierderea la tragere. */
+function recalcVials(subId) {
+  const s = sub(subId), vs = S.vials[subId] || []; if (!vs.length) return;
+  const entries = S.log.filter(e => e.sub === subId && e.vial != null).sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
+  for (const v of vs) {
+    let left = v.manualMg != null ? v.manualMg : s.vialMg;
+    for (const e of entries) {
+      if (e.vial !== v.n) continue;
+      if (v.manualMg != null && e.manualBefore) continue;
+      const need = r3(e.mg * lossFactor());
+      e.taken = r3(Math.min(need, Math.max(0, left)));
+      left = r3(Math.max(0, left - e.taken));
+    }
+    v.leftMg = v.emptied ? 0 : left;
+  }
+}
+/* Leaga intrarile fara fiola de fiola deschisa la data respectiva (ultima fiola cu opened <= data). */
+function attachOrphans(subId) {
+  const vs = (S.vials[subId] || []).slice().sort((a, b) => a.opened.localeCompare(b.opened));
+  if (!vs.length) return 0;
+  let n = 0;
+  for (const e of S.log) {
+    if (e.sub !== subId || e.vial != null) continue;
+    const cand = vs.filter(v => v.opened <= e.date).slice(-1)[0];
+    if (cand) { e.vial = cand.n; n++; }
+  }
+  if (n) recalcVials(subId);
+  return n;
+}
+const orphanCount = subId => S.log.filter(e => e.sub === subId && e.vial == null).length;
+function reconcileAll() { let n = 0; for (const sb of SUBS) { n += attachOrphans(sb.id); recalcVials(sb.id); } return n; }
 
 function scheduled(s, k) {
   if (s.stopped) return null;
@@ -119,7 +153,7 @@ function vialLine(d) {
   if (dl < 0) w = ` · <span style="color:var(--warn)">expirată de ${-dl} zile</span>`;
   else if (dl <= 2) w = ` · <span style="color:var(--warn)">expiră ${dl === 0 ? "azi" : "în " + dl + " zile"}</span>`;
   else w = ` · expiră ${fmt(exp)}`;
-  const lw = left < 1 ? ` <span style="color:var(--warn)">(nu mai ajunge, prepară alta)</span>` : "";
+  const lw = v.emptied || v.leftMg <= 0.0005 ? ` <span style="color:var(--warn)">(goală, prepară alta)</span>` : left < 1 ? ` <span style="color:var(--warn)">(nu mai ajunge, prepară alta)</span>` : "";
   return `<div class="vl">Fiola #${v.n} · ${num(v.leftMg)} ${s.unit === "ml" ? "mg" : "mg"} rămase ≈ ${left} doze${lw}${w}</div>`;
 }
 function doseCard(d, k) {
@@ -159,7 +193,7 @@ function alertsFor(k) {
     else {
       const dl = diffDays(k, vialExpiry(s, v));
       if (dl < 0) a.push(`<div class="alert"><b>${esc(s.short)}: fiola #${v.n} a expirat</b>Aruncă și prepară alta. ${esc(s.stab)}</div>`);
-      else if (v.leftMg + 1e-9 < d.mg) a.push(`<div class="alert"><b>${esc(s.short)}: fiola #${v.n} nu mai ajunge pentru doza de azi</b>Prepară o fiolă nouă.</div>`);
+      else if (v.leftMg + 1e-9 < d.mg * lossFactor()) a.push(`<div class="alert"><b>${esc(s.short)}: fiola #${v.n} nu mai ajunge pentru doza de azi</b>Prepară o fiolă nouă.</div>`);
       else if (dl <= 1) a.push(`<div class="alert info"><b>${esc(s.short)}: fiola #${v.n} expiră ${dl === 0 ? "azi" : "mâine"}</b>Pregătește următoarea.</div>`);
     }
   }
@@ -169,6 +203,8 @@ function alertsFor(k) {
     if (r === s.cycleOn) a.push(`<div class="alert info"><b>${esc(s.short)}: începe pauza de washout (${s.cycleOff / 7} săpt.)</b>Reia pe ${esc(fmtL(addDays(k, s.cycleOff)))}. Fiola deschisă va expira probabil între timp.</div>`);
     else if (r === 0) a.push(`<div class="alert info"><b>${esc(s.short)}: reia după pauză (ciclul ${Math.floor(di / per) + 1})</b>Verifică dacă fiola activă mai e în termen; altfel prepară una nouă.</div>`);
   }
+  const orph = SUBS.map(sb => orphanCount(sb.id)).reduce((x, y) => x + y, 0);
+  if (orph) a.push(`<div class="alert"><b>${orph} administrări nu sunt scăzute din nicio fiolă</b>Au fost înregistrate când nu exista fiolă activă în aplicație. Fiole → „Atribuie fiolei deschise la data lor”.</div>`);
   a.push(...suppliesAlerts(k));
   if (S.sync.token && S.sync.lastError) a.push(`<div class="alert"><b>Sincronizarea cu GitHub nu funcționează</b>${esc(S.sync.lastError)}. Verifică tokenul în Setări.</div>`);
   const due = labsDue();
@@ -253,13 +289,14 @@ function renderVials() {
         <div class="meter"><i class="${pct < 20 ? "low" : ""}" style="width:${pct}%"></i></div>
         <div class="stockrow"><span>${num(v.leftMg)} mg rămase ≈ <b>${vialDosesLeft(s, v)} doze</b> de ${esc(doseLabel(s, s.doseMg))}</span><span class="mono" style="color:${dl < 0 ? "var(--warn)" : dl <= 2 ? "var(--am)" : "inherit"}">${dl < 0 ? "expirată" : dl === 0 ? "expiră azi" : "expiră " + fmt(exp)}</span></div>
         <div class="stockrow"><span>Doza standard cu această fiolă</span><span class="mono"><b>${fmtU(unitsFor(s, s.doseMg, v))}</b></span></div>
-        <div class="row wrap"><button class="btn small" data-act="vial-new" data-id="${s.id}">Fiolă nouă</button><button class="btn small danger" data-act="vial-discard" data-id="${s.id}">Aruncă fiola #${v.n}</button></div>`;
+        ${S.settings.lossPct ? `<div class="tiny">Dozele rămase includ pierderea la tragere de ${num(S.settings.lossPct)}% (Setări).</div>` : ""}
+        <div class="row wrap"><button class="btn small" data-act="vial-new" data-id="${s.id}">Fiolă nouă</button><button class="btn small" data-act="vial-empty" data-id="${s.id}">Marchează goală</button><button class="btn small" data-act="vial-adjust" data-id="${s.id}">Corectează mg rămase</button><button class="btn small danger" data-act="vial-discard" data-id="${s.id}">Aruncă fiola #${v.n}</button></div>`;
     } else {
       body = `<p class="muted">${s.ready ? "Niciun flacon deschis." : "Nicio fiolă reconstituită."} ${active ? "Este nevoie de una pentru administrările din perioada aceasta." : ""}</p>
         <div class="row"><button class="btn ${active ? "primary" : ""} small" data-act="vial-new" data-id="${s.id}">${s.ready ? "Deschide flacon" : "Prepară fiola"} (ghid pas cu pas)</button></div>`;
     }
     h += `<div class="vial"><div class="row between"><span class="name">${esc(s.name)}</span><span class="chip ${left <= 0 ? "warn" : ""}">${used} / ${s.stock} folosite</span></div>
-      <div class="tiny">${esc(s.cycle)} · ${esc(s.stab)}</div>${body}
+      <div class="tiny">${esc(s.cycle)} · ${esc(s.stab)}</div>${orphanCount(s.id) ? `<div class="alert"><b>${orphanCount(s.id)} administrări fără fiolă atribuită</b>Nu au fost scăzute din nicio fiolă. <button class="btn small" data-act="vial-attach" data-id="${s.id}">Atribuie fiolei deschise la data lor</button></div>` : ""}${body}
       ${vs.length > 1 ? `<details><summary class="tiny">Istoric fiole (${vs.length})</summary><div class="tiny">${vs.map(x => `#${x.n}: ${fmtL(x.opened)}${x.lot ? ", lot " + esc(x.lot) : ""}${x.discarded ? ", aruncată" : ""}, ${num(x.leftMg)} mg rămase`).join("<br>")}</div></details>` : ""}
     </div>`;
   }
@@ -304,7 +341,7 @@ function safetyWarnings(s, k, units, site, route, vial, isNew) {
   const w = [];
   const mg = units / 100 * conc(s, vial);
   if (vial && diffDays(vial.opened, k) > s.stabilityDays) w.push(`Fiola #${vial.n} este expirată: ${diffDays(vial.opened, k)} zile de la reconstituire, limita e ${s.stabilityDays}. Prepară una nouă.`);
-  if (vial && vial.leftMg + 1e-9 < mg) w.push(`Fiola #${vial.n} mai are ${num(vial.leftMg)} mg, mai puțin decât doza de ${num(mg)} mg.`);
+  if (vial && vial.leftMg + 1e-9 < mg * lossFactor()) w.push(`Fiola #${vial.n} mai are ${num(vial.leftMg)} mg, mai puțin decât doza de ${num(mg)} mg${S.settings.lossPct ? " plus pierderea la tragere" : ""}.`);
   if (s.maxMg && mg > s.maxMg + 1e-9) w.push(`Doza ${doseLabel(s, mg)} depășește maximul din surse: ${doseLabel(s, s.maxMg)} = ${fmtU(unitsFor(s, s.maxMg, vial))}.`);
   if (["dsip", "semax", "selank"].includes(s.id) && units > 20) w.push(`${s.short} se dozează în micrograme. ${fmtU(units)} înseamnă de ${Math.round(units / unitsFor(s, s.doseMg, vial))} ori doza standard. Oprește-te și verifică seringa.`);
   const d = scheduled(s, k);
@@ -1048,7 +1085,12 @@ function renderSettings() {
   $("#title").textContent = "Setări";
   $("#subtitle").textContent = "Remindere, notificări, backup";
   const perm = ("Notification" in window) ? Notification.permission : "unsupported";
-  const h = `<div class="card stack"><h2>Remindere</h2>
+  const h = `<div class="card stack"><h2>Fiole: pierdere la tragere</h2>
+      <p class="muted">La fiecare doză rămâne lichid în ac și în vârful seringii (spațiu mort), iar ultima doză dintr-o fiolă e greu de tras complet. Dacă fiolele tale se golesc înainte ca aplicația să arate 0, pune aici un procent; se adaugă la fiecare doză scăzută. Tipic 5-10% la seringile de insulină cu ac fix.</p>
+      <div class="row"><label class="f grow">Pierdere per doză (%)<input type="number" id="s-loss" min="0" max="50" step="1" value="${num(S.settings.lossPct || 0)}"></label><button class="btn" data-act="loss-save" style="align-self:end">Salvează</button></div>
+      <div class="row wrap"><button class="btn" data-act="vials-recalc">Recalculează stocul fiolelor din jurnal</button></div>
+      <p class="tiny">Recalculul reconstruiește mg rămase din administrările înregistrate și leagă de fiola potrivită administrările făcute înainte să fi preparat fiola în aplicație.</p></div>
+    <div class="card stack"><h2>Remindere</h2>
       <label class="f">Dimineața<input type="time" id="s-am" value="${esc(S.settings.am)}"></label>
       <label class="f">Seara<input type="time" id="s-pm" value="${esc(S.settings.pm)}"></label>
       <button class="btn" data-act="settings-save">Salvează orele</button></div>
@@ -1182,9 +1224,19 @@ const A = {
     const oid = host.querySelector("#v-order") ? host.querySelector("#v-order").value : "";
     const ord = (S.orders || []).find(o => String(o.id) === oid); const oit = ord && ord.items.find(x => x.sub === d.id);
     vs.push({ n: vs.length + 1, opened, waterMl, leftMg: s.vialMg, discarded: false, orderId: ord ? ord.id : null, lot: oit && oit.lot ? oit.lot : "" });
-    save(); closeSheet(); toast(`Fiola #${vs.length} ${s.ready ? "deschisă" : "reconstituită"}: ${fmtU(unitsFor(s, s.doseMg, vs[vs.length - 1]))} per doză`); render();
+    const att = attachOrphans(d.id); recalcVials(d.id);
+    save(); closeSheet(); toast(`Fiola #${vs.length} ${s.ready ? "deschisă" : "reconstituită"}: ${fmtU(unitsFor(s, s.doseMg, vs[vs.length - 1]))} per doză${att ? `; ${att} administrări anterioare scăzute din ea` : ""}`); render();
   },
   "vial-discard": d => { const v = activeVial(d.id); if (v && confirm(`Arunci fiola #${v.n} de ${sub(d.id).short}?`)) { v.discarded = true; save(); render(); } },
+  "vial-empty": d => { const v = activeVial(d.id); if (v && confirm(`Marchezi fiola #${v.n} de ${sub(d.id).short} ca goală? Va trebui să prepari alta pentru următoarea doză.`)) { v.emptied = true; v.leftMg = 0; v.discarded = true; save(); toast("Fiola marcată goală"); render(); } },
+  "vial-adjust": d => {
+    const s = sub(d.id), v = activeVial(d.id); if (!v) return;
+    const val = prompt(`Câte mg mai sunt în fiola #${v.n} de ${s.short}? (acum ${num(v.leftMg)} mg; fiola are ${s.vialMg} mg)`, String(v.leftMg).replace(".", ","));
+    if (val == null) return; const mg = parseFloat(String(val).replace(",", ".")); if (isNaN(mg) || mg < 0 || mg > s.vialMg) return toast("Valoare invalidă");
+    v.manualMg = r3(mg); v.emptied = mg <= 0; S.log.forEach(e => { if (e.sub === d.id && e.vial === v.n) e.manualBefore = true; }); recalcVials(d.id); save(); toast(`Fiola #${v.n}: ${num(v.leftMg)} mg`); render();
+  },
+  "vial-attach": d => { const n = attachOrphans(d.id); save(); toast(n ? `${n} administrări atribuite și scăzute` : "Nicio administrare de atribuit (fără fiolă deschisă la data lor)"); render(); },
+  "vials-recalc": () => { const n = reconcileAll(); save(); toast(`Stoc recalculat din jurnal${n ? "; " + n + " administrări atribuite" : ""}`); render(); },
   "log-new": d => logSheet(d.id, d.k, null),
   "log-edit": d => { const e = S.log.find(x => x.id === +d.eid); if (e) logSheet(e.sub, e.date, e); },
   "log-save": d => {
@@ -1200,25 +1252,22 @@ const A = {
     if (d.new) {
       const s = sub(d.id), v = activeVial(d.id);
       if (!(dr.units > 0)) return toast("Introdu unitățile administrate");
-      const taken = v ? Math.min(dr.mg, v.leftMg) : 0;
-      S.log.push({ id: +d.eid, date: d.k, time, sub: d.id, mg: dr.mg, units: dr.units, label: dr.label, site, feel: dr.feel, symptoms: dr.symptoms, comment, vial: v ? v.n : null, planned: dr.planned, route, taken, adhoc: !!dr.adhoc });
-      if (v) v.leftMg = Math.max(0, Math.round((v.leftMg - taken) * 1000) / 1000);
+      const vFor = (S.vials[d.id] || []).filter(x => x.opened <= d.k).slice(-1)[0] || v;
+      S.log.push({ id: +d.eid, date: d.k, time, sub: d.id, mg: dr.mg, units: dr.units, label: dr.label, site, feel: dr.feel, symptoms: dr.symptoms, comment, vial: vFor ? vFor.n : null, planned: dr.planned, route, taken: 0, adhoc: !!dr.adhoc });
+      recalcVials(d.id);
       const dk = S.days[d.k + "|" + d.id]; if (dk && dk.skip) { delete dk.skip; delete dk.moved; }
       toast(`${s.short} înregistrat: ${fmtU(dr.units)}`);
     } else {
       const e = S.log.find(x => x.id === +d.eid);
       if (!(dr.units > 0)) return toast("Introdu unitățile administrate");
-      const s = sub(e.sub), vs = S.vials[e.sub] || [], v = vs.find(x => x.n === e.vial);
-      let taken = e.taken != null ? e.taken : e.mg;
-      if (v) { const avail = Math.min(s.vialMg, v.leftMg + taken); taken = Math.min(dr.mg, avail); v.leftMg = Math.max(0, Math.round((avail - taken) * 1000) / 1000); }
-      Object.assign(e, { time, site, feel: dr.feel, symptoms: dr.symptoms, comment, mg: dr.mg, units: dr.units, label: dr.label, route, taken }); toast("Actualizat");
+      if (e.vial == null) { const cand = (S.vials[e.sub] || []).filter(x => x.opened <= e.date).slice(-1)[0]; if (cand) e.vial = cand.n; }
+      Object.assign(e, { time, site, feel: dr.feel, symptoms: dr.symptoms, comment, mg: dr.mg, units: dr.units, label: dr.label, route }); recalcVials(e.sub); toast("Actualizat");
     }
     save(); closeSheet(); render();
   },
   "log-delete": d => {
     const i = S.log.findIndex(x => x.id === +d.eid); if (i < 0 || !confirm("Ștergi această înregistrare?")) return;
-    const e = S.log[i]; const vs = S.vials[e.sub] || []; const v = vs.find(x => x.n === e.vial); if (v) v.leftMg = Math.min(sub(e.sub).vialMg, v.leftMg + (e.taken != null ? e.taken : e.mg));
-    S.log.splice(i, 1); save(); closeSheet(); render();
+    const e = S.log[i]; S.log.splice(i, 1); recalcVials(e.sub); save(); closeSheet(); render();
   },
   "skip": d => { S.days[d.k + "|" + d.id] = Object.assign(S.days[d.k + "|" + d.id] || {}, { skip: true }); save(); render(); },
   "move": d => {
@@ -1252,9 +1301,8 @@ const A = {
     const k = todayKey(), s = sub(d.id), dd = scheduled(s, k); if (!dd) return;
     const ack = $("#f-ack"); if (ack && !ack.checked) { toast("Bifează confirmarea de sub avertizări"); ack.scrollIntoView({ block: "center" }); return; }
     const v = activeVial(d.id);
-    const taken = v ? Math.min(dd.mg, v.leftMg) : 0;
-    S.log.push({ id: Date.now(), date: k, time: nowHM(), sub: d.id, mg: dd.mg, units: dd.units, label: dd.label, site: d.site, feel: 0, symptoms: [], comment: "", vial: v ? v.n : null, planned: { mg: dd.mg, units: dd.units, label: dd.label }, route: s.routeKey || "sc", taken });
-    if (v) v.leftMg = Math.max(0, Math.round((v.leftMg - taken) * 1000) / 1000);
+    S.log.push({ id: Date.now(), date: k, time: nowHM(), sub: d.id, mg: dd.mg, units: dd.units, label: dd.label, site: d.site, feel: 0, symptoms: [], comment: "", vial: v ? v.n : null, planned: { mg: dd.mg, units: dd.units, label: dd.label }, route: s.routeKey || "sc", taken: 0 });
+    recalcVials(d.id);
     save(); toast(`${s.short} înregistrat: ${fmtU(dd.units)}, ${d.site}`); focusIdx = 0; render(); window.scrollTo(0, 0);
   },
   "info-open": d => infoSheet(d.id),
@@ -1290,6 +1338,7 @@ const A = {
   "plan-reset": d => { delete S.plan[d.id]; save(); closeSheet(); render(); },
   "plan-reset-all": () => { if (confirm("Resetezi toate modificările planului (datele, fiolele și jurnalul rămân)?")) { S.plan = {}; S.days = {}; save(); toast("Plan resetat"); render(); } },
   "settings-save": () => { S.settings.am = $("#s-am").value || "06:45"; S.settings.pm = $("#s-pm").value || "21:00"; S.notified = {}; save(); toast("Ore salvate"); render(); },
+  "loss-save": () => { const v = parseFloat($("#s-loss").value); S.settings.lossPct = isNaN(v) ? 0 : Math.max(0, Math.min(50, v)); reconcileAll(); save(); toast(`Pierdere ${num(S.settings.lossPct)}%, stoc recalculat`); render(); },
   "notif-enable": enableNotifications,
   "update-check": async () => {
     try {
@@ -1412,6 +1461,7 @@ if ("serviceWorker" in navigator) {
   let refreshed = false;
   navigator.serviceWorker.addEventListener("controllerchange", () => { if (updateReady && !refreshed) { refreshed = true; location.reload(); } });
 }
+if (S.meta.vialRecalc !== "2.7") { reconcileAll(); S.meta.vialRecalc = "2.7"; save(true); }
 if (new URLSearchParams(location.search).get("mode") === "inject") view = "focus";
 render();
 if (!authValid()) showLock("lock");
