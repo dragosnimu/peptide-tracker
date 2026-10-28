@@ -1,8 +1,8 @@
 /* Datele planului: substantele din comanda MKM (august 2026), dozele standard din fisa
    furnizorului si avertismentele din raportul de analiza. Tot ce e aici poate fi
    suprascris din aplicatie (Calendar -> Editeaza planul). */
-const APP_VERSION = "2.8";
-const APP_DATE = "2026-10-03";
+const APP_VERSION = "2.9";
+const APP_DATE = "2026-10-28";
 const PLAN_START = "2026-09-05";
 const PLAN_WEEKS = 16;
 
@@ -235,6 +235,24 @@ const SUBS = [
     stab: "Reconstituit: 21-30 zile. O fiolă = 16 doze.",
     flag: "Formularea studiată clinic este intranazală. Micrograme: 12 U, nu seringă plină. Planul urmează cicluri de 6 săpt. cu 2 săpt. pauză.",
     cycle: "zilnic în cicluri de 6 săpt. + 2 săpt. pauză (fișa: 4-6 săpt.), până la epuizarea stocului: 161 doze, până pe 4 iun 2027"
+  },
+  {
+    id: "reta", name: "Retatrutide", short: "Retatrutide",
+    from: "2026-10-28", to: "2026-12-16", time: "pm", route: "SC", cycleOn: 0, cycleOff: 0,
+    pattern: "dow", dow: [3], unit: "mg", doseMg: 2.5,
+    vialMg: 5, waterMl: 1, stabilityDays: 28, stock: 4, maxMg: 12,
+    test: false,
+    what: "Agonist triplu GIP / GLP-1 / glucagon (LY3437943, Eli Lilly), în studii de fază 3; neautorizat nicăieri. Nu este în comanda MKM și nici în raport.",
+    steps: [
+      "Fiola la temperatura camerei. Dezinfectează dopul.",
+      "1 ml apă bacteriostatică lent pe peretele fiolei. Rotește ușor, nu agita.",
+      "Lichid limpede, incolor. Tulbure sau cu particule = aruncă.",
+      "Rezultat: 5 mg/ml. 2,5 mg = 0,5 ml = 50 U. O fiolă = 2 doze = 2 săptămâni.",
+      "Frigider 2-8 °C, ferită de lumină. Nu congela."
+    ],
+    stab: "Reconstituit: ~28 zile la 2-8 °C (date de clasă GLP-1). La 2,5 mg/săpt. fiola se termină în 8 zile.",
+    flag: "Doză fixă de 2,5 mg fără titrare, peste doza de start din studiu (2 mg cu urcare lentă). Greața, vărsăturile și diareea sunt frecvente la început; dacă apar, redu la 1 mg (20 U) 2-4 săptămâni.",
+    cycle: "o dată pe săptămână, miercurea seara, 2,5 mg = 50 U: 4 fiole × 2 doze = 8 săptămâni, până pe 16 dec"
   }
 ];
 

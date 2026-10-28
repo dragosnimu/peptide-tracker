@@ -168,6 +168,20 @@ const INFO = {
     storage: "Pulbere: 2-8 °C, -20 °C pe termen lung. Reconstituit: 2-8 °C, 21-30 zile.",
     warnings: ["Fiolele injectabile presupun o cale diferită de cea validată clinic.", "Suprapunere cu Semax (enkefalinaze)."],
     interactions: "Semax."
+  },
+  reta: {
+    what: "Peptidă sintetică de 39 de aminoacizi (LY3437943, Eli Lilly), agonist al receptorilor GIP, GLP-1 și glucagon, cu timp de înjumătățire de aproximativ 6 zile, deci administrare săptămânală. Dezvoltată pentru obezitate și diabet de tip 2. Nu face parte din comanda MKM și nu apare în raportul de analiză; în dosar există doar certificatele de puritate pentru fiola de 10 mg.",
+    mechanism: ["GLP-1: scade apetitul, încetinește golirea gastrică, crește secreția de insulină dependentă de glucoză.", "GIP: efect incretinic suplimentar și, probabil, mai puțină greață la aceeași scădere în greutate.", "Glucagon: crește consumul energetic și oxidarea lipidelor hepatice; de aici efectul suplimentar pe ficatul gras.", "Rezultat net: scădere în greutate mai mare decât la agoniștii GLP-1 sau duali, în studiile de fază 2."],
+    evidence: { level: "Studii clinice de fază 2 publicate; faza 3 în curs", text: "Fază 2 (NEJM, 2023; 338 adulți cu obezitate, 48 de săptămâni): scădere în greutate de 17,5% la 4 mg, 22,8% la 8 mg și 24,2% la 12 mg, față de 2,1% la placebo. Programul de fază 3 (TRIUMPH) era în desfășurare la data redactării. Nu este autorizat de nicio agenție; fiolele din comerțul de cercetare nu au trecut prin niciun control de siguranță sau sterilitate." },
+    benefits: ["Scădere în greutate", "Control glicemic", "Reducerea grăsimii hepatice"],
+    dosing: [{ src: "Studiul de fază 2", text: "Subcutanat, o dată pe săptămână. Start 2 mg (sau 1 mg), apoi creștere la fiecare 4 săptămâni până la doza țintă de 4, 8 sau 12 mg." }, { src: "Protocoale din comunitate", text: "0,5-1 mg/săptămână la început, creștere cu 0,5-1 mg la 3-4 săptămâni, în funcție de toleranța digestivă." }, { src: "Planul tău", text: "2,5 mg = 50 U fix, miercurea seara, 8 săptămâni (4 fiole). Fără titrare, la alegerea ta." }],
+    recon: { note: "Apa pe perete, rotire ușoară. Schema ta: 1 ml apă, 5 mg/ml, deci 50 U = 2,5 mg. Dozele mici cer seringă de 0,3 ml.", schemes: [{ label: "1 ml apă (5 mg/ml, schema ta)", water: 1, conc: 5, doses: [[0.5, "10 U"], [1, "20 U"], [2, "40 U"], [2.5, "50 U"], [4, "80 U"], [5, "100 U"]] }, { label: "2 ml apă (2,5 mg/ml)", water: 2, conc: 2.5, doses: [[0.5, "20 U"], [1, "40 U"], [2, "80 U"], [2.5, "100 U"]] }] },
+    when: "O dată pe săptămână, în aceeași zi, la orice oră; seara, cum ai ales, lasă greața inițială să treacă peste noapte. Dacă sari o doză cu peste 4 zile, continui cu următoarea programată, nu dublezi.",
+    where: "SC: abdomen, coapsă, braț, cu rotație. Nu intramuscular.",
+    route: "SC. Studiile sunt exclusiv subcutanate.",
+    storage: "Pulbere: 2-8 °C, ferită de lumină. Reconstituit: 2-8 °C, ~28 zile; nu congela. La 2 doze pe fiolă, fiola se termină în 8 zile.",
+    warnings: ["Reacții digestive (greață, vărsături, diaree, constipație) sunt cele mai frecvente, dependente de doză, mai ales la creșteri. Doza ta de start e peste cea din studiu.", "Creșterea frecvenței cardiace (în medie câteva bătăi pe minut în primele luni) și, în studiu, parestezii cutanate la unii participanți.", "Contraindicații de clasă (GLP-1): antecedente personale sau familiale de carcinom medular tiroidian sau MEN2, pancreatită în antecedente, sarcină.", "Cu antidiabetice (insulină, sulfonilureice) crește riscul de hipoglicemie; MOTS-c acționează și el pe glicemie.", "Golirea gastrică încetinită poate modifica absorbția medicamentelor orale.", "Fiola ta este de 5 mg; certificatele din dosar sunt pentru 10 mg, alt produs."],
+    interactions: "MOTS-c (glicemie), medicație antidiabetică, medicamente orale cu fereastră terapeutică îngustă."
   }
 };
 
